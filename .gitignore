@@ -1,0 +1,29 @@
+# Build output
+.gradle/
+build/
+.kotlin/
+local.properties
+*.apk
+*.aab
+*.ipa
+
+# IDE
+.idea/
+*.iml
+.DS_Store
+
+# Secrets and account data: never commit
+token
+*.token
+.env
+.env.*
+*.keystore
+*.jks
+secrets/
+
+# Captured HTTP traffic and real API responses
+*.har
+*.mitm
+*.flow
+captures/
+real-responses/
