@@ -13,7 +13,10 @@ An Android app (iOS later) that gives parents a simpler way to manage today's pl
 
 ```
 ./gradlew :shared:jvmTest
+PLAYTIME_TOKEN_FILE=/absolute/path/to/session-token ./gradlew :shared:readOnlyCheck   # reads your account, never writes
 ```
+
+If Nintendo starts rejecting requests with `invalid_headers`, the minimum app version went up: compare `APP_INTERNAL_VERSION` in `shared/.../config/NintendoApi.kt` with `MOBILE_APP_BUILD` in upstream `pynintendoparental/const.py`.
 
 ## Credits
 
