@@ -1,0 +1,271 @@
+package org.example.playtime.android
+
+import android.app.Application
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
+import io.ktor.client.engine.android.Android
+import kotlin.time.Clock
+import kotlin.time.Instant
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.launch
+import org.example.playtime.api.ApiError
+import org.example.playtime.api.ParentalApi
+import org.example.playtime.api.TokenProvider
+import org.example.playtime.api.nintendoHttpClient
+import org.example.playtime.apply.ExecutionResult
+import org.example.playtime.apply.Executor
+import org.example.playtime.apply.readExtension
+import org.example.playtime.auth.AccessToken
+import org.example.playtime.auth.LoginRequest
+import org.example.playtime.auth.NintendoAuth
+import org.example.playtime.planner.DayState
+import org.example.playtime.planner.Plan
+import org.example.playtime.planner.Step
+import org.example.playtime.screen.Action
+import org.example.playtime.screen.DemoScenarios
+import org.example.playtime.screen.ScreenModel
+import org.example.playtime.screen.clock
+import org.example.playtime.screen.duration
+import org.example.playtime.today.buildToday
+
+sealed interface UiState {
+    data object Disclaimer : UiState
+    data class SignIn(val message: String? = null, val waitingForLink: Boolean = false) : UiState
+    data object Loading : UiState
+    data class Ready(
+        val state: DayState,
+        val title: String,
+        val demo: Boolean,
+        val updatedAt: Instant?,
+        val beforeWakeUp: Boolean,
+        val supported: Boolean,
+    ) : UiState
+    data class Problem(val message: String) : UiState
+}
+
+sealed interface Dialog {
+    data class ConfirmChange(val model: ScreenModel) : Dialog
+    data class ReadOnly(val steps: String) : Dialog
+    data class Mismatch(val text: String) : Dialog
+    data class Error(val text: String) : Dialog
+    data object About : Dialog
+}
+
+class AppViewModel(app: Application) : AndroidViewModel(app) {
+    private val prefs = app.getSharedPreferences("settings", 0)
+    private val store = TokenStore(app)
+    private val http = nintendoHttpClient(Android.create())
+    private val auth = NintendoAuth(http)
+    private var access: AccessToken? = null
+    private val tokens = TokenProvider { force ->
+        val cached = access
+        if (!force && cached != null && !cached.expiresWithin(60, Clock.System.now())) return@TokenProvider cached.idToken
+        val session = store.load() ?: throw ApiError.LoginExpired("no saved login")
+        auth.refresh(session).also { access = it }.idToken
+    }
+    private val api = ParentalApi(http, tokens, os = "ANDROID", timeZone = java.util.TimeZone.getDefault().id)
+
+    private var login: LoginRequest? = null
+    private var deviceId: String? = null
+    private var lastLoad = 0L
+    private var demoIndex = 0
+
+    private val _ui = MutableStateFlow<UiState>(UiState.Loading)
+    val ui: StateFlow<UiState> = _ui
+
+    /** Wheel value (today's total); null = untouched. */
+    private val _dial = MutableStateFlow<Int?>(null)
+    val dial: StateFlow<Int?> = _dial
+
+    /** Text shown inside the button while sending or just after ("✓ Done …"). */
+    private val _buttonMessage = MutableStateFlow<String?>(null)
+    val buttonMessage: StateFlow<String?> = _buttonMessage
+
+    private val _dialog = MutableStateFlow<Dialog?>(null)
+    val dialog: StateFlow<Dialog?> = _dialog
+
+    init {
+        _ui.value = when {
+            !prefs.getBoolean(ACKNOWLEDGED, false) -> UiState.Disclaimer
+            store.load() == null -> UiState.SignIn()
+            else -> UiState.Loading.also { refresh() }
+        }
+    }
+
+    fun acknowledge() {
+        prefs.edit().putBoolean(ACKNOWLEDGED, true).apply()
+        _ui.value = if (store.load() == null) UiState.SignIn() else UiState.Loading.also { refresh() }
+    }
+
+    /** Returns the URL to open in a browser tab. */
+    fun startLogin(): String {
+        val request = auth.startLogin()
+        login = request
+        _ui.value = UiState.SignIn(waitingForLink = true)
+        return request.url
+    }
+
+    /** The npf…://auth link, from the redirect or pasted by the user. */
+    fun completeLogin(link: String) {
+        val request = login ?: run { _ui.value = UiState.SignIn("Start the sign-in again, then use the new link."); return }
+        viewModelScope.launch {
+            try {
+                val code = auth.sessionTokenCode(link, request.state)
+                store.save(auth.exchangeSessionToken(code, request.verifier))
+                login = null
+                access = null
+                _ui.value = UiState.Loading
+                load()
+            } catch (e: IllegalArgumentException) {
+                _ui.value = UiState.SignIn(e.message, waitingForLink = true)
+            } catch (e: ApiError) {
+                _ui.value = UiState.SignIn(message(e), waitingForLink = true)
+            }
+        }
+    }
+
+    fun startDemo() {
+        demoIndex = 0
+        showDemo()
+    }
+
+    fun nextDemoScenario() {
+        demoIndex = (demoIndex + 1) % DemoScenarios.all.size
+        showDemo()
+    }
+
+    private fun showDemo() {
+        val (label, state) = DemoScenarios.all[demoIndex]
+        _dial.value = null
+        _ui.value = UiState.Ready(state, "Demo ${demoIndex + 1}/4 · $label", demo = true, updatedAt = null, beforeWakeUp = false, supported = true)
+    }
+
+    fun signOut() {
+        store.clear()
+        access = null
+        deviceId = null
+        _dialog.value = null
+        _ui.value = UiState.SignIn()
+    }
+
+    fun setDial(value: Int) { _dial.value = value; _buttonMessage.value = null }
+    fun resetDial() { _dial.value = null }
+    fun showAbout() { _dialog.value = Dialog.About }
+    fun dismissDialog() { _dialog.value = null }
+
+    /** Refresh when the app comes to the foreground, at most once a minute (be gentle with the API). */
+    fun onForeground() {
+        val ready = _ui.value as? UiState.Ready ?: return
+        if (!ready.demo && System.currentTimeMillis() - lastLoad > 60_000) refresh()
+    }
+
+    fun refresh() {
+        viewModelScope.launch { load() }
+    }
+
+    private suspend fun load() {
+        try {
+            val device = api.ownedDevices().ownedDevices.firstOrNull()
+                ?: run { _ui.value = UiState.Problem("No console is linked to this Nintendo Account."); return }
+            deviceId = device.deviceId
+            val today = buildToday(api.parentalControlSetting(device.deviceId), api.dailySummaries(device.deviceId), device.device?.timeZone, Clock.System.now())
+            lastLoad = System.currentTimeMillis()
+            _dial.value = null
+            _ui.value = UiState.Ready(
+                today.state, device.label ?: "Console", demo = false, updatedAt = today.playedAsOf,
+                beforeWakeUp = today.beforeWakeUp, supported = today.allowanceEnabled,
+            )
+        } catch (e: ApiError) {
+            handle(e)
+        }
+    }
+
+    /** The button: changes that remove time ask first (Stop time, less time). */
+    fun onButton(model: ScreenModel) {
+        when (model.action) {
+            Action.NONE -> Unit
+            Action.ADD -> send(model)
+            Action.REDUCE, Action.STOP -> _dialog.value = Dialog.ConfirmChange(model)
+        }
+    }
+
+    fun confirmed(model: ScreenModel) {
+        _dialog.value = null
+        send(model)
+    }
+
+    private fun send(model: ScreenModel) {
+        val ready = _ui.value as? UiState.Ready ?: return
+        val plan = model.actionPlan
+        if (ready.demo) {
+            _ui.value = ready.copy(state = simulate(ready.state, plan))
+            done(if (model.action == Action.STOP) "✓ Stopped (demo)" else "✓ Done (demo)")
+            return
+        }
+        if (!BuildConfig.WRITES_ENABLED) {
+            _dialog.value = Dialog.ReadOnly(describe(plan))
+            return
+        }
+        val id = deviceId ?: return
+        viewModelScope.launch {
+            _buttonMessage.value = "Sending…"
+            val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime)
+            when (val result = executor.execute(plan)) {
+                is ExecutionResult.Done -> { load(); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
+                is ExecutionResult.Mismatch -> {
+                    load(); _buttonMessage.value = null
+                    _dialog.value = Dialog.Mismatch(
+                        "Nintendo applied something different from the plan: ${duration(result.extension ?: 0)} extra, bedtime ${clock(result.bedtime)} " +
+                            "(planned ${duration(result.expectedExtension)}, bedtime ${clock(result.expectedBedtime)}). The screen now shows what Nintendo reports.",
+                    )
+                }
+                is ExecutionResult.Failed -> {
+                    _buttonMessage.value = null
+                    val e = result.error
+                    if (e is ApiError) handle(e) else _dialog.value = Dialog.Error("Nintendo didn't confirm the change in time. The screen shows the latest state.")
+                    load()
+                }
+            }
+        }
+    }
+
+    private fun done(text: String) {
+        _dial.value = null
+        _buttonMessage.value = text
+        viewModelScope.launch { delay(2_500); if (_buttonMessage.value == text) _buttonMessage.value = null }
+    }
+
+    private fun handle(e: ApiError) {
+        when (e) {
+            is ApiError.LoginExpired -> { store.clear(); access = null; _ui.value = UiState.SignIn("Your sign-in expired. Please sign in again.") }
+            else -> if (_ui.value is UiState.Ready) _dialog.value = Dialog.Error(message(e)) else _ui.value = UiState.Problem(message(e))
+        }
+    }
+
+    private fun message(e: ApiError) = when (e) {
+        is ApiError.LoginExpired -> "Your sign-in expired. Please sign in again."
+        is ApiError.ServiceChanged -> "Nintendo's service changed. Update the app, or use the official app for now."
+        is ApiError.RateLimited -> "Nintendo asked us to slow down. Try again in a few minutes."
+        is ApiError.Conflict -> "Another change is still being applied. Try again in a moment."
+        is ApiError.Network -> "Can't reach Nintendo. Check your connection."
+        is ApiError.Http -> "Nintendo returned an error (${e.status})."
+    }
+
+    private companion object {
+        const val ACKNOWLEDGED = "acknowledged_unofficial"
+    }
+}
+
+/** What the plan would send, for the read-only build. */
+private fun describe(plan: Plan): String = plan.steps.joinToString("\n") {
+    when (it) {
+        Step.Cancel -> "• Cancel today's extra time"
+        is Step.Add -> "• Add ${it.minutes} min" + if (it.withBedtime) ", moving bedtime" else ""
+    }
+}
+
+/** Demo mode: apply the plan to the synthetic state. */
+private fun simulate(s: DayState, plan: Plan): DayState =
+    s.copy(extension = plan.extensionAfter, extendedBedtime = if (plan.bedtimeAfter != s.configuredBedtime) plan.bedtimeAfter else null)

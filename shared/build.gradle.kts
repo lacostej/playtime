@@ -1,13 +1,21 @@
 plugins {
     kotlin("multiplatform")
     kotlin("plugin.serialization")
+    id("com.android.library")
+}
+
+android {
+    namespace = "org.example.playtime.shared"
+    compileSdk = 36
+    defaultConfig { minSdk = 26 }
 }
 
 val ktor = "3.6.1"
 
 kotlin {
-    // JVM target for fast unit tests and the read-only dev check; androidTarget() and the iOS targets are added with the apps.
+    // JVM target for fast unit tests and the read-only dev check; iOS targets come with the iOS app.
     jvm()
+    androidTarget()
 
     sourceSets {
         commonMain.dependencies {
@@ -25,6 +33,9 @@ kotlin {
         }
         jvmMain.dependencies {
             implementation("io.ktor:ktor-client-okhttp:$ktor")
+        }
+        androidMain.dependencies {
+            implementation("io.ktor:ktor-client-android:$ktor")
         }
     }
 }
