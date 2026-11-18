@@ -4,7 +4,9 @@ import android.content.Intent
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.SystemBarStyle
 import androidx.activity.compose.setContent
+import androidx.activity.enableEdgeToEdge
 import androidx.activity.viewModels
 import androidx.browser.customtabs.CustomTabsIntent
 import androidx.compose.foundation.background
@@ -20,6 +22,8 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Checkbox
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -45,15 +49,36 @@ import org.example.playtime.screen.duration
 const val DISCLAIMER = "This is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Nintendo Co., Ltd. " +
     "\"Nintendo\" and \"Nintendo Switch\" are trademarks of Nintendo. This app communicates only with Nintendo's servers using your own account; use it at your own risk."
 
+/** The app's palette for Material components (buttons, checkbox, dialogs, text fields). */
+private val AppColors = lightColorScheme(
+    primary = Palette.accent,
+    onPrimary = androidx.compose.ui.graphics.Color.White,
+    secondary = Palette.accent,
+    background = Palette.background,
+    onBackground = Palette.ink,
+    surface = androidx.compose.ui.graphics.Color.White,
+    onSurface = Palette.ink,
+    onSurfaceVariant = Palette.muted,
+    surfaceContainerHigh = androidx.compose.ui.graphics.Color.White,
+    outline = Palette.tick,
+)
+
 class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        // Light background: dark status-bar and navigation-bar icons.
+        enableEdgeToEdge(
+            statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+            navigationBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
+        )
         super.onCreate(savedInstanceState)
         handleLink(intent)
         setContent {
-            Column(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
-                App(vm) { url -> CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, Uri.parse(url)) }
+            MaterialTheme(colorScheme = AppColors) {
+                Column(Modifier.fillMaxSize().background(Palette.background).safeDrawingPadding()) {
+                    App(vm) { url -> CustomTabsIntent.Builder().build().launchUrl(this@MainActivity, Uri.parse(url)) }
+                }
             }
         }
     }
@@ -118,7 +143,12 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
                         "They'll have ${duration(d.model.toPlay)} left. Bedtime: ${clock(d.model.bedtimeAfter)}.",
                 )
             },
-            confirmButton = { TextButton(onClick = { vm.confirmed(d.model) }) { Text(if (d.model.action == Action.STOP) "Stop time" else "Reduce") } },
+            confirmButton = {
+                val stop = d.model.action == Action.STOP
+                TextButton(onClick = { vm.confirmed(d.model) }) {
+                    Text(if (stop) "Stop time" else "Reduce", color = if (stop) Palette.stop else Palette.reduce, fontWeight = FontWeight.SemiBold)
+                }
+            },
             dismissButton = { TextButton(onClick = vm::dismissDialog) { Text("Cancel") } },
         )
         is Dialog.ReadOnly -> AlertDialog(
