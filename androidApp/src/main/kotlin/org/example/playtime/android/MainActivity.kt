@@ -97,6 +97,8 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
                 warning = if (s.beforeWakeUp) "It's still before the console's wake-up time. Extra time added now may not behave as expected." else null,
                 onTitle = if (s.demo) vm::nextDemoScenario else null,
                 onAbout = vm::showAbout,
+                demoLink = if (s.demo) "Exit demo" else "Demo",
+                onDemoLink = if (s.demo) vm::exitDemo else vm::startDemo,
                 onDial = vm::setDial,
                 onReset = vm::resetDial,
                 onButton = { vm.onButton(model) },

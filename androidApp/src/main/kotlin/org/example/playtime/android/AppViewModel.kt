@@ -131,6 +131,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         showDemo()
     }
 
+    /** Back from the demo to the signed-in console (the login stays stored while in the demo). */
+    fun exitDemo() {
+        _dial.value = null
+        if (store.load() == null) _ui.value = UiState.SignIn() else { _ui.value = UiState.Loading; refresh() }
+    }
+
     fun nextDemoScenario() {
         demoIndex = (demoIndex + 1) % DemoScenarios.all.size
         showDemo()

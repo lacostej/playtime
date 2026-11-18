@@ -87,6 +87,8 @@ fun WheelScreen(
     warning: String?,
     onTitle: (() -> Unit)?,
     onAbout: () -> Unit,
+    demoLink: String,
+    onDemoLink: () -> Unit,
     onDial: (Int) -> Unit,
     onReset: () -> Unit,
     onButton: () -> Unit,
@@ -107,6 +109,7 @@ fun WheelScreen(
                 )
                 if (updatedAt != null) Text(updatedAt, fontSize = 12.sp, color = Palette.muted)
             }
+            Text(demoLink, fontSize = 13.sp, color = Palette.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDemoLink).padding(8.dp))
             Text("About", fontSize = 13.sp, color = Palette.muted, modifier = Modifier.clickable(onClick = onAbout).padding(8.dp))
         }
         if (warning != null) {
