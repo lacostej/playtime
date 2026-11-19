@@ -55,11 +55,13 @@ sealed interface Dialog {
     data class Mismatch(val text: String) : Dialog
     data class Error(val text: String) : Dialog
     data object About : Dialog
+    data object Log : Dialog
 }
 
 class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val prefs = app.getSharedPreferences("settings", 0)
     private val store = TokenStore(app)
+    val log = LogStore(app)
     private val http = nintendoHttpClient(Android.create())
     private val auth = NintendoAuth(http)
     private var access: AccessToken? = null
@@ -69,7 +71,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val session = store.load() ?: throw ApiError.LoginExpired("no saved login")
         auth.refresh(session).also { access = it }.idToken
     }
-    private val api = ParentalApi(http, tokens, os = "ANDROID", timeZone = java.util.TimeZone.getDefault().id)
+    private val api = ParentalApi(http, tokens, os = "ANDROID", timeZone = java.util.TimeZone.getDefault().id, logger = log)
 
     private var login: LoginRequest? = null
     private var deviceId: String? = null
@@ -123,13 +125,16 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             try {
                 val code = auth.sessionTokenCode(link, request.state)
                 store.save(auth.exchangeSessionToken(code, request.verifier))
+                log.log("signed in")
                 login = null
                 access = null
                 _ui.value = UiState.Loading
                 load()
             } catch (e: IllegalArgumentException) {
+                log.log("sign-in link rejected: ${e.message}")
                 _ui.value = UiState.SignIn(e.message, waitingForLink = true)
             } catch (e: ApiError) {
+                log.log("sign-in failed: ${e::class.simpleName}")
                 _ui.value = UiState.SignIn(message(e), waitingForLink = true)
             }
         }
@@ -158,6 +163,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun signOut() {
+        log.log("signed out")
         store.clear()
         access = null
         deviceId = null
@@ -168,6 +174,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun setDial(value: Int) { _dial.value = value; _buttonMessage.value = null }
     fun resetDial() { _dial.value = null }
     fun showAbout() { _dialog.value = Dialog.About }
+    fun showLog() { _dialog.value = Dialog.Log }
     fun dismissDialog() { _dialog.value = null }
 
     /** Back in the foreground: refresh, at most once a minute (be gentle with the API). */
@@ -198,6 +205,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     /** [quiet]: an automatic refresh; failures show in the freshness line instead of a dialog. */
     private suspend fun load(quiet: Boolean = false, resetDial: Boolean = false) {
         _refreshing.value = true
+        log.log(if (quiet) "refresh (automatic)" else "refresh")
         try {
             val device = api.ownedDevices().ownedDevices.firstOrNull()
                 ?: run { _ui.value = UiState.Problem("No console is linked to this Nintendo Account."); return }
@@ -205,6 +213,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             val today = buildToday(api.parentalControlSetting(device.deviceId), api.dailySummaries(device.deviceId), device.device?.timeZone, Clock.System.now())
             lastLoad = System.currentTimeMillis()
             autoBlockedUntil = 0
+            log.log("today: ${today.state}")
             if (resetDial) _dial.value = null // an automatic refresh never throws away a change in progress
             _ui.value = UiState.Ready(
                 today.state, device.label ?: "Console", demo = false, playedAsOf = today.playedAsOf,
@@ -212,6 +221,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                 consoleLastHeard = today.consoleLastHeard, loadedAt = Clock.System.now(),
             )
         } catch (e: ApiError) {
+            log.log("refresh failed: ${e::class.simpleName}")
             val ready = _ui.value as? UiState.Ready
             if (quiet && ready != null && e !is ApiError.LoginExpired) {
                 _ui.value = ready.copy(refreshFailedAt = Clock.System.now())
@@ -254,7 +264,8 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             sending = true
             _buttonMessage.value = "Sending…"
-            val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime)
+            log.log("confirm: ${model.action} ${duration(model.allocated)} -> ${duration(model.dial)} from ${ready.state}")
+            val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime, logger = log)
             when (val result = executor.execute(plan)) {
                 is ExecutionResult.Done -> { load(resetDial = true); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
                 is ExecutionResult.Mismatch -> {

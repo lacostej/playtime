@@ -14,6 +14,15 @@ import io.ktor.http.HttpHeaders
 import io.ktor.http.contentType
 import org.example.playtime.config.NintendoApi
 
+/** Receives one line per notable event. Never pass tokens, IDs or names to it. */
+fun interface ActivityLogger {
+    fun log(message: String)
+
+    companion object {
+        val None = ActivityLogger { }
+    }
+}
+
 /** Supplies the API token; [forceRefresh] after the API rejected the current one. */
 fun interface TokenProvider {
     suspend fun idToken(forceRefresh: Boolean): String
@@ -28,6 +37,7 @@ class ParentalApi(
     private val tokens: TokenProvider,
     private val os: String,
     private val timeZone: String? = null,
+    private val logger: ActivityLogger = ActivityLogger.None,
 ) {
     suspend fun ownedDevices(): OwnedDevicesResponse = get("/v2/actions/user/fetchOwnedDevices")
 
@@ -45,22 +55,37 @@ class ParentalApi(
      * Observed: when the response has a nextStepDetail, nothing is applied until [confirmExtraPlayingTime];
      * without one (e.g. after bedtime, or a cancel) the update itself applies.
      */
-    suspend fun updateExtraPlayingTime(deviceId: String, status: ExtraTimeStatus, minutes: Int? = null): UpdateExtraPlayingTimeResponse =
-        post("/v2/actions/device/updateExtraPlayingTime", UpdateExtraPlayingTimeRequest(deviceId, status.name, minutes))
+    suspend fun updateExtraPlayingTime(deviceId: String, status: ExtraTimeStatus, minutes: Int? = null): UpdateExtraPlayingTimeResponse {
+        val r: UpdateExtraPlayingTimeResponse =
+            post("/v2/actions/device/updateExtraPlayingTime", UpdateExtraPlayingTimeRequest(deviceId, status.name, minutes))
+        val next = r.nextStepDetail?.estimatedBedtimeChanges
+        logger.log(if (r.nextStepDetail != null) "  next step: confirm (bedtime ${next?.from} -> ${next?.to})" else "  no next step: applied by the update")
+        return r
+    }
 
     /** Apply a pending add; [withBedtime] moves bedtime by the same minutes. Only call after an update that returned a nextStepDetail. */
     suspend fun confirmExtraPlayingTime(deviceId: String, minutes: Int, withBedtime: Boolean) {
         post<Unit>("/v2/actions/device/confirmExtraPlayingTime", ConfirmExtraPlayingTimeRequest(deviceId, minutes, withBedtime))
     }
 
-    private suspend inline fun <reified T> get(path: String): T = call { http.get(NintendoApi.API_BASE + path) { headers(it) } }
+    private suspend inline fun <reified T> get(path: String): T = call("GET ${endpoint(path)}") { http.get(NintendoApi.API_BASE + path) { headers(it) } }
 
-    private suspend inline fun <reified T> post(path: String, body: Any): T = call {
+    private suspend inline fun <reified T> post(path: String, body: Any): T = call("POST ${endpoint(path)} ${describe(body)}") {
         http.post(NintendoApi.API_BASE + path) {
             headers(it)
             contentType(ContentType.Application.Json)
             setBody(body)
         }
+    }
+
+    /** Endpoint name only: no host, no query (the query holds the device ID). */
+    private fun endpoint(path: String) = path.substringBefore('?').substringAfterLast('/')
+
+    /** Request body without the device ID. */
+    private fun describe(body: Any) = when (body) {
+        is UpdateExtraPlayingTimeRequest -> body.status + (body.additionalTime?.let { " $it min" } ?: "")
+        is ConfirmExtraPlayingTimeRequest -> "${body.additionalTime} min withBedtime=${body.withBedtime}"
+        else -> ""
     }
 
     private fun HttpRequestBuilder.headers(idToken: String) {
@@ -73,9 +98,14 @@ class ParentalApi(
     }
 
     /** Send once; on 401 refresh the token and retry exactly once. */
-    private suspend inline fun <reified T> call(crossinline send: suspend (String) -> HttpResponse): T = mapErrors {
+    private suspend inline fun <reified T> call(label: String, crossinline send: suspend (String) -> HttpResponse): T = mapErrors {
+        val started = kotlin.time.TimeSource.Monotonic.markNow()
         var response = send(tokens.idToken(forceRefresh = false))
-        if (response.status.value == 401) response = send(tokens.idToken(forceRefresh = true))
+        if (response.status.value == 401) {
+            logger.log("$label -> 401, refreshing the token")
+            response = send(tokens.idToken(forceRefresh = true))
+        }
+        logger.log("$label -> ${response.status.value} (${started.elapsedNow().inWholeMilliseconds} ms)")
         when (val status = response.status.value) {
             200 -> if (T::class == Unit::class) Unit as T else response.body<T>()
             401, 403 -> throw ApiError.LoginExpired("API rejected the token")
@@ -85,6 +115,7 @@ class ParentalApi(
                 val code = runCatching { NintendoJson.decodeFromString(ErrorBody.serializer(), response.bodyAsText()).errorCode }.getOrNull()
                 if (status == 400 && code == "invalid_headers") throw ApiError.ServiceChanged("request headers rejected")
                 if (code == "update_required") throw ApiError.ServiceChanged("app update required") // as handled by Home Assistant's integration
+                logger.log("  error code: ${code ?: "none"}")
                 throw ApiError.Http(status, code)
             }
         }

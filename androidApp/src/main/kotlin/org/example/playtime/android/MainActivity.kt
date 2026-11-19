@@ -196,10 +196,35 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
         Dialog.About -> AlertDialog(
             onDismissRequest = vm::dismissDialog,
             title = { Text("About") },
-            text = { Text(DISCLAIMER + "\n\nOpen source, MIT licence. Builds on the pynintendoparental project.") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(DISCLAIMER + "\n\nOpen source, MIT licence. Builds on the pynintendoparental project.")
+                    Text(if (BuildConfig.WRITES_ENABLED) "This build can change the console." else "Read-only build: nothing is sent to the console.", fontSize = 13.sp, color = Palette.muted)
+                    TextButton(onClick = vm::showLog) { Text("Activity log") }
+                }
+            },
             confirmButton = { TextButton(onClick = vm::dismissDialog) { Text("Close") } },
             dismissButton = { TextButton(onClick = vm::signOut) { Text("Sign out") } },
         )
+        Dialog.Log -> {
+            val lines by vm.log.lines.collectAsState()
+            val clipboard = androidx.compose.ui.platform.LocalClipboardManager.current
+            AlertDialog(
+                onDismissRequest = vm::dismissDialog,
+                title = { Text("Activity log") },
+                text = {
+                    Text(
+                        if (lines.isEmpty()) "Nothing logged yet." else lines.takeLast(200).joinToString("\n"),
+                        fontSize = 11.sp, fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace, lineHeight = 14.sp,
+                        modifier = Modifier.verticalScroll(rememberScrollState()),
+                    )
+                },
+                confirmButton = { TextButton(onClick = vm::dismissDialog) { Text("Close") } },
+                dismissButton = {
+                    TextButton(onClick = { clipboard.setText(androidx.compose.ui.text.AnnotatedString(lines.joinToString("\n"))) }) { Text("Copy") }
+                },
+            )
+        }
     }
 }
 

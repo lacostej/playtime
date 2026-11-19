@@ -59,10 +59,25 @@ class Executor(
     private val pause: suspend (Long) -> Unit = { delay(it) },
     private val pollIntervalMs: Long = 3_000,
     private val settleTimeoutMs: Long = 30_000,
+    private val logger: org.example.playtime.api.ActivityLogger = org.example.playtime.api.ActivityLogger.None,
 ) {
     suspend fun execute(plan: Plan): ExecutionResult {
+        logger.log("plan: ${plan.steps.joinToString(", ") { describe(it) }}; expect ${plan.extensionAfter} min extra, bedtime ${plan.bedtimeAfter / 60}:${(plan.bedtimeAfter % 60).toString().padStart(2, '0')}")
+        val result = run(plan)
+        logger.log("result: $result")
+        return result
+    }
+
+    private fun describe(step: Step) = when (step) {
+        Step.Cancel -> "cancel"
+        is Step.Add -> "add ${step.minutes}" + if (step.withBedtime) " +bedtime" else ""
+    }
+
+    private suspend fun run(plan: Plan): ExecutionResult {
         var last = try { read() } catch (e: ApiError) { return ExecutionResult.Failed(0, e) }
+        logger.log("before: $last")
         for ((i, step) in plan.steps.withIndex()) {
+            logger.log("step ${i + 1}/${plan.steps.size}: ${describe(step)}")
             try {
                 last = when (step) {
                     Step.Cancel -> {
@@ -79,8 +94,10 @@ class Executor(
                         settle(step) { it.duration != before && it.applied == it.duration }
                     }
                 }
+                logger.log("  landed: $last")
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
+                logger.log("  failed: ${e::class.simpleName}: ${e.message}")
                 return ExecutionResult.Failed(i, e)
             }
         }
