@@ -5,7 +5,7 @@ plugins {
 }
 
 android {
-    namespace = "org.example.playtime.shared"
+    namespace = "io.github.lacostej.playtime.shared"
     compileSdk = 36
     defaultConfig { minSdk = 26 }
 }
@@ -47,5 +47,5 @@ tasks.register<JavaExec>("readOnlyCheck") {
     val jvm = kotlin.jvm()
     dependsOn(jvm.compilations["main"].compileTaskProvider)
     classpath = files(jvm.compilations["main"].output.allOutputs, jvm.compilations["main"].runtimeDependencyFiles)
-    mainClass.set("org.example.playtime.dev.ReadOnlyCheckKt")
+    mainClass.set("io.github.lacostej.playtime.dev.ReadOnlyCheckKt")
 }

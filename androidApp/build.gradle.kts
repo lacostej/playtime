@@ -5,11 +5,11 @@ plugins {
 }
 
 android {
-    namespace = "org.example.playtime.android"
+    namespace = "io.github.lacostej.playtime.android"
     compileSdk = 36
 
     defaultConfig {
-        applicationId = "org.example.playtime" // placeholder until the app has a name
+        applicationId = "io.github.lacostej.playtime"
         minSdk = 26
         targetSdk = 36
         versionCode = 1
