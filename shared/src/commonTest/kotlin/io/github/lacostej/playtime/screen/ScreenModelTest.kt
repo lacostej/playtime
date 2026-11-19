@@ -76,6 +76,8 @@ class ScreenModelTest {
         assertEquals(50, fit.toPlay)
         assertEquals(60, fit.dial); assertEquals(0, fit.delta)
         assertEquals(0, fit.blocked)
+        assertEquals(fit.fitBedtime, fit.actionPlan) // what Confirm sends to the console
+        assertEquals(fit.actionPlan.steps, fit.replan(s[2].extension, s[2].extendedBedtime).steps) // a retry asks for the same
     }
 
     @Test

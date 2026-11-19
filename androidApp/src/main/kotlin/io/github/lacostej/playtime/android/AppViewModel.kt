@@ -270,7 +270,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             sending = true
             _buttonMessage.value = "Sending…"
-            log.log("confirm: ${model.action} ${duration(model.allocated)} -> ${duration(model.dial)} from ${ready.state}")
+            log.log("confirm: ${model.action} ${duration(model.allocated)} -> ${duration(model.dial)}" + (if (model.fittingBedtime) " (move bedtime to ${clock(model.bedtimeAfter)})" else "") + " from ${ready.state}")
             val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime, logger = log)
             when (val result = executor.execute(plan) { r -> model.replan(r.duration, r.bedtime) }) {
                 is ExecutionResult.Done -> { load(resetDial = true); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
