@@ -32,6 +32,12 @@ data class ScreenModel(
     val bedtimeAfter: Int,
     val bedtimeChanged: Boolean,
     val bedtimePassed: Boolean,
+    /** Minutes of today's total that bedtime makes unplayable, while the wheel is untouched; 0 otherwise. */
+    val bedtimeCuts: Int = 0,
+    /** The plan that moves bedtime so all of today's total is playable; offered while [bedtimeCuts] > 0. */
+    val fitBedtime: Plan? = null,
+    /** True when [plan] is [fitBedtime], chosen by the parent. */
+    val fittingBedtime: Boolean = false,
 ) {
     /** The same request planned again from what Nintendo now shows, e.g. after a step landed wrong. */
     fun replan(extension: Int?, extendedBedtime: Int?): Plan {
@@ -44,12 +50,16 @@ data class ScreenModel(
 
         fun allocated(s: DayState) = maxOf(s.limit + (s.extension ?: 0), s.played)
 
-        fun of(s: DayState, dial: Int? = null): ScreenModel {
+        /** [fitBedtime]: the parent asked to move bedtime so the untouched total becomes playable. */
+        fun of(s: DayState, dial: Int? = null, fitBedtime: Boolean = false): ScreenModel {
             val allocated = allocated(s)
             val v = (dial ?: allocated).coerceIn(s.played, maxOf(MAX_DIAL, allocated))
             val untouched = plan(s, -1)
-            val target = if (v == allocated) untouched.playableNow else maxOf(0, v - s.played)
-            val p = plan(s, target, force = v != allocated)
+            val cuts = if (v == allocated) allocated - s.played - untouched.playableNow else 0
+            val fit = if (cuts > 0) plan(s, allocated - s.played, force = true).takeIf { it.changed } else null
+            val fitting = fitBedtime && fit != null
+            val target = if (fitting) allocated - s.played else if (v == allocated) untouched.playableNow else maxOf(0, v - s.played)
+            val p = if (fitting) fit!! else plan(s, target, force = v != allocated)
             val toPlay = maxOf(0, p.stopAt - s.now)
             val allocatedAfter = if (p.changed) maxOf(s.limit + p.extensionAfter, s.played) else allocated
             val playEnd = s.played + toPlay
@@ -73,6 +83,7 @@ data class ScreenModel(
                 bedtimeBefore = p.bedtimeBefore, bedtimeAfter = p.bedtimeAfter,
                 bedtimeChanged = p.bedtimeAfter != p.bedtimeBefore,
                 bedtimePassed = p.bedtimeAfter <= s.now,
+                bedtimeCuts = cuts, fitBedtime = fit, fittingBedtime = fitting,
             )
         }
     }

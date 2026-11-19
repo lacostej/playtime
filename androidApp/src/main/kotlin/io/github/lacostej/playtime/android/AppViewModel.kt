@@ -90,6 +90,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private val _dial = MutableStateFlow<Int?>(null)
     val dial: StateFlow<Int?> = _dial
 
+    /** The parent asked to move bedtime so the untouched total becomes playable. */
+    private val _fitBedtime = MutableStateFlow(false)
+    val fitBedtime: StateFlow<Boolean> = _fitBedtime
+
     /** Text shown inside the button while sending or just after ("✓ Done …"). */
     private val _buttonMessage = MutableStateFlow<String?>(null)
     val buttonMessage: StateFlow<String?> = _buttonMessage
@@ -147,7 +151,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Back from the demo to the signed-in console (the login stays stored while in the demo). */
     fun exitDemo() {
-        _dial.value = null
+        clearChange()
         if (store.load() == null) _ui.value = UiState.SignIn() else { _ui.value = UiState.Loading; refresh() }
     }
 
@@ -158,7 +162,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun showDemo() {
         val (label, state) = DemoScenarios.all[demoIndex]
-        _dial.value = null
+        clearChange()
         _ui.value = UiState.Ready(state, "Demo ${demoIndex + 1}/4 · $label", demo = true, playedAsOf = null, beforeWakeUp = false, supported = true)
     }
 
@@ -171,8 +175,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         _ui.value = UiState.SignIn()
     }
 
-    fun setDial(value: Int) { _dial.value = value; _buttonMessage.value = null }
-    fun resetDial() { _dial.value = null }
+    fun setDial(value: Int) { _dial.value = value; _fitBedtime.value = false; _buttonMessage.value = null }
+    fun resetDial() { clearChange() }
+    fun fitBedtime() { _dial.value = null; _fitBedtime.value = true; _buttonMessage.value = null }
+    private fun clearChange() { _dial.value = null; _fitBedtime.value = false }
     fun showAbout() { _dialog.value = Dialog.About }
     fun showLog() { _dialog.value = Dialog.Log }
     fun dismissDialog() { _dialog.value = null }
@@ -214,7 +220,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             lastLoad = System.currentTimeMillis()
             autoBlockedUntil = 0
             log.log("today: ${today.state}")
-            if (resetDial) _dial.value = null // an automatic refresh never throws away a change in progress
+            if (resetDial) clearChange() // an automatic refresh never throws away a change in progress
             _ui.value = UiState.Ready(
                 today.state, device.label ?: "Console", demo = false, playedAsOf = today.playedAsOf,
                 beforeWakeUp = today.beforeWakeUp, supported = today.allowanceEnabled,
@@ -287,7 +293,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun done(text: String) {
-        _dial.value = null
+        clearChange()
         _buttonMessage.value = text
         viewModelScope.launch { delay(2_500); if (_buttonMessage.value == text) _buttonMessage.value = null }
     }

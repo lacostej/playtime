@@ -104,6 +104,7 @@ class MainActivity : ComponentActivity() {
 fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
     val ui by vm.ui.collectAsState()
     val dial by vm.dial.collectAsState()
+    val fitBedtime by vm.fitBedtime.collectAsState()
     val message by vm.buttonMessage.collectAsState()
     val dialog by vm.dialog.collectAsState()
     val refreshing by vm.refreshing.collectAsState()
@@ -133,7 +134,7 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
         is UiState.Ready -> if (!s.supported) {
             Centered { Text("This first version needs a daily play-time limit on the console for today. Set one in the official app (it can be 0).") }
         } else {
-            val model = ScreenModel.of(s.state, dial)
+            val model = ScreenModel.of(s.state, dial, fitBedtime)
             val (freshness, warn) = freshness(s, now, canPlay = ScreenModel.of(s.state).plan.playableNow > 0)
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
             WheelScreen(
@@ -150,6 +151,7 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
                 onDemoLink = if (s.demo) vm::exitDemo else vm::startDemo,
                 onDial = vm::setDial,
                 onReset = vm::resetDial,
+                onFitBedtime = vm::fitBedtime,
                 onButton = { vm.onButton(model) },
             )
             }

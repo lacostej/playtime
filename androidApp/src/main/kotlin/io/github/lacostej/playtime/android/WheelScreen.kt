@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlin.math.PI
@@ -97,6 +98,7 @@ fun WheelScreen(
     onDemoLink: () -> Unit,
     onDial: (Int) -> Unit,
     onReset: () -> Unit,
+    onFitBedtime: () -> Unit,
     onButton: () -> Unit,
 ) {
     // Scrollable (but exactly one screen tall) so pulling down anywhere can trigger a refresh.
@@ -133,7 +135,8 @@ fun WheelScreen(
             Text(warning, fontSize = 13.sp, color = Palette.bedtimeMove, modifier = Modifier.fillMaxWidth().background(Color(0xFFFBEBDD), RoundedCornerShape(10.dp)).padding(10.dp))
         }
         Text("Today’s limits", fontSize = 22.sp, fontWeight = FontWeight.SemiBold, color = Palette.ink, textAlign = TextAlign.Center, modifier = Modifier.fillMaxWidth())
-        Wheel(model, onDial)
+        Wheel(model, onDial, onFitBedtime)
+        BedtimeLine(model, onFitBedtime)
         Spacer(Modifier.weight(1f))
         ChangeCard(model)
         Summary(model)
@@ -143,11 +146,12 @@ fun WheelScreen(
 }
 
 @Composable
-private fun Wheel(model: ScreenModel, onDial: (Int) -> Unit) {
+private fun Wheel(model: ScreenModel, onDial: (Int) -> Unit, onFitBedtime: () -> Unit) {
     val haptics = LocalHapticFeedback.current
     // The gesture handler lives across recompositions: read the latest model and callback, not the first ones.
     val current by rememberUpdatedState(model)
     val dial by rememberUpdatedState(onDial)
+    val fit by rememberUpdatedState(onFitBedtime)
     var dragValue by remember { mutableStateOf<Float?>(null) }
     var lastAngle by remember { mutableStateOf(0.0) }
     val value = dragValue ?: model.dial.toFloat()
@@ -156,7 +160,8 @@ private fun Wheel(model: ScreenModel, onDial: (Int) -> Unit) {
     Box(
         Modifier.fillMaxWidth().aspectRatio(1f)
             .semantics { contentDescription = "Today's play time: ${duration(model.dial)}" }
-            .pointerInput(Unit) { detectTapGestures { } } // taps on the wheel never reset it
+            // Taps on the wheel never reset it; a tap on the moon or the faded part offers to move bedtime.
+            .pointerInput(Unit) { detectTapGestures { p -> if (hitsBedtimeCut(current, p, size.width.toFloat())) fit() } }
             .pointerInput(Unit) {
                 fun angle(p: Offset): Double {
                     val a = atan2((p.x - size.width / 2).toDouble(), (size.height / 2 - p.y).toDouble())
@@ -201,6 +206,53 @@ private fun Wheel(model: ScreenModel, onDial: (Int) -> Unit) {
                 fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = actionColor(model) ?: Palette.muted,
             )
         }
+    }
+}
+
+/** Whether a tap at [p] lands on the ring between the moon and the handle, while moving bedtime is on offer. */
+private fun hitsBedtimeCut(model: ScreenModel, p: Offset, width: Float): Boolean {
+    if (model.fitBedtime == null || model.fittingBedtime) return false
+    val half = width / 2
+    val d = hypot(p.x - half, p.y - half) / half
+    if (d !in 0.6f..0.95f) return false // the ring sits at 0.77 of the half-width
+    var a = atan2((p.x - half).toDouble(), (half - p.y).toDouble())
+    if (a < 0) a += 2 * PI
+    var laps = model.dial / TURN
+    if (model.dial % TURN == 0 && laps > 0) laps -= 1
+    val minute = laps * TURN + a / (2 * PI) * TURN
+    val cutStart = model.state.played + model.toPlay
+    return minute in (cutStart - 4.0)..(model.dial + 2.0)
+}
+
+@Composable
+private fun BedtimeLine(model: ScreenModel, onFit: () -> Unit) {
+    // Height always reserved, so nothing below moves when the line appears.
+    val offer = model.fitBedtime != null && !model.fittingBedtime
+    Row(
+        Modifier.fillMaxWidth().height(36.dp).then(if (offer) Modifier.clickable(onClick = onFit) else Modifier),
+        horizontalArrangement = Arrangement.Center, verticalAlignment = Alignment.CenterVertically,
+    ) {
+        val fit = model.fitBedtime ?: return@Row
+        MoonIcon()
+        if (model.fittingBedtime) {
+            Text("Bedtime moves to ${clock(fit.bedtimeAfter)}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.bedtimeMove)
+        } else {
+            Text("Bedtime cuts ${duration(model.bedtimeCuts)} · ", fontSize = 14.sp, color = Palette.muted)
+            Text(
+                "Move bedtime to ${clock(fit.bedtimeAfter)}", fontSize = 14.sp, fontWeight = FontWeight.SemiBold, color = Palette.bedtimeMove,
+                textDecoration = TextDecoration.Underline,
+            )
+        }
+    }
+}
+
+@Composable
+private fun MoonIcon() {
+    Canvas(Modifier.padding(end = 6.dp).size(18.dp)) {
+        val k = size.width / 24f
+        val c = Offset(size.width / 2, size.height / 2)
+        drawCircle(Palette.bedtimeMove, 10 * k, c)
+        drawCircle(Palette.background, 8.5f * k, Offset(c.x + 4.4f * k, c.y - 3.7f * k))
     }
 }
 
