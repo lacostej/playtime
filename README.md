@@ -24,6 +24,10 @@ The server sometimes gives a different result from what was asked: yesterday's e
 
 Working on Android, tested on an emulator against a real account. No release yet: build it from source. A demo mode (header → Demo) shows four typical situations without an account.
 
+## Limitations
+
+- **Today can only be made more generous, not stricter.** Nintendo's API changes a single day only through extra time: the app can add time, move bedtime later, and take back extra time it or the official app granted. It can't give today a lower limit or an earlier bedtime than the weekday setting. For a stricter day, change that weekday's settings in the official app, and change them back afterwards.
+
 ## Build and install
 
 Needs JDK 17 and the Android SDK (compileSdk 36; the app runs on Android 8.0+). Point `local.properties` at your SDK (`sdk.dir=/path/to/android-sdk`), then:

@@ -11,7 +11,7 @@ Extending play time today means picking fixed amounts (5, 15, 30, 60 min) and re
 - **Seeing the result:** nothing says "they can play N more minutes", or what a change does to today's total.
 - **Bedtime:** after bedtime, or close to it, an extension may give less play than it says (see `BACKEND_ISSUES.md`), with nothing on screen to show it.
 - **Freshness:** played time arrives late, and nothing shows how old it is.
-- **One-day changes:** limits and bedtime are per weekday. A one-off day means changing the weekday and remembering to change it back. (Not addressed yet.)
+- **One-day changes:** limits and bedtime are per weekday. A one-off day means changing the weekday and remembering to change it back. The app only covers the generous direction (see 11 below, and Limitations in the README).
 
 ## 1. One control for one question
 
@@ -85,9 +85,9 @@ When bedtime cuts today's total (the faded part of the ring), a line under the w
 - The app refreshes when it comes to the foreground (if the data is over a minute old), every 2 minutes while open, and on pull-to-refresh. After a failure it waits 15 minutes before the next automatic try. These numbers follow the Home Assistant integration's polling.
 - A small spinner shows a refresh; "Updated N min ago" says how old the data is, and turns orange after a failed refresh.
 
-## 11. Keep it small
+## 11. Keep it small and say what it can't do
 
-- Deferred on purpose: a "stricter day" (earlier bedtime or lower limit just for today). It needs a temporary weekday change plus a background restore.
+- Limitation: no "stricter day" (earlier bedtime or lower limit just for today). The API only changes a day through extra time, so it would need a temporary weekday change plus a restore afterwards. Not decided.
 - No developer view in the app. The activity log (About → Activity log) is the troubleshooting tool. It holds no tokens or device IDs.
 
 ## Open questions
