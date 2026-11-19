@@ -59,13 +59,22 @@ class ParentalApi(
         val r: UpdateExtraPlayingTimeResponse =
             post("/v2/actions/device/updateExtraPlayingTime", UpdateExtraPlayingTimeRequest(deviceId, status.name, minutes))
         val next = r.nextStepDetail?.estimatedBedtimeChanges
-        logger.log(if (r.nextStepDetail != null) "  next step: confirm (bedtime ${next?.from} -> ${next?.to})" else "  no next step: applied by the update")
+        logger.log("  status ${r.status}; " + if (r.nextStepDetail != null) "next step: confirm (bedtime ${next?.from} -> ${next?.to})" else "no next step: applied by the update")
+        refuseOn(r.status)
         return r
     }
 
     /** Apply a pending add; [withBedtime] moves bedtime by the same minutes. Only call after an update that returned a nextStepDetail. */
-    suspend fun confirmExtraPlayingTime(deviceId: String, minutes: Int, withBedtime: Boolean) {
-        post<Unit>("/v2/actions/device/confirmExtraPlayingTime", ConfirmExtraPlayingTimeRequest(deviceId, minutes, withBedtime))
+    suspend fun confirmExtraPlayingTime(deviceId: String, minutes: Int, withBedtime: Boolean): ConfirmExtraPlayingTimeResponse {
+        val r: ConfirmExtraPlayingTimeResponse =
+            post("/v2/actions/device/confirmExtraPlayingTime", ConfirmExtraPlayingTimeRequest(deviceId, minutes, withBedtime))
+        logger.log("  status ${r.status}")
+        refuseOn(r.status)
+        return r
+    }
+
+    private fun refuseOn(status: String?) {
+        if (status in REFUSED_STATUSES) throw ApiError.Refused(status!!)
     }
 
     private suspend inline fun <reified T> get(path: String): T = call("GET ${endpoint(path)}") { http.get(NintendoApi.API_BASE + path) { headers(it) } }

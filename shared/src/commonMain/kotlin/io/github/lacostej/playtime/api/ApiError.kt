@@ -14,6 +14,12 @@ sealed class ApiError(message: String, cause: Throwable? = null) : Exception(mes
     /** Another change is still being applied (seen right after a cancel); retry shortly. */
     class Conflict : ApiError("Another change is in progress")
 
+    /**
+     * HTTP 200, but the response's status says the change wasn't made (e.g. NO_EFFECT, OVERTIME_ERROR).
+     * Status values as seen in responses, listed in pynintendoparental#144.
+     */
+    class Refused(val status: String) : ApiError("Nintendo refused the change: $status")
+
     class Network(cause: Throwable) : ApiError("Network error", cause)
 
     class Http(val status: Int, val errorCode: String?) : ApiError("HTTP $status ${errorCode.orEmpty()}")

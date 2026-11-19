@@ -8,11 +8,26 @@ import io.github.lacostej.playtime.api.ParentalApi
 import io.github.lacostej.playtime.api.TokenProvider
 import io.github.lacostej.playtime.planner.DayState
 import io.github.lacostej.playtime.planner.plan
+import io.github.lacostej.playtime.screen.ScreenModel
+import io.github.lacostej.playtime.api.ApiError
+import kotlin.test.assertContains
 
 private fun at(h: Int, m: Int = 0) = h * 60 + m
 
 class ExecutorTest {
     private val pauses = mutableListOf<Long>()
+
+    private val log = mutableListOf<String>()
+
+    /** As the app sends it: the wheel set to [dial], retrying once from what Nintendo shows. */
+    private fun send(console: FakeConsole, played: Int, dial: Int): ExecutionResult {
+        val state = DayState(console.now, limit = 0, extension = console.extension, played = played,
+            configuredBedtime = console.configuredBedtime, extendedBedtime = console.extendedBedtime)
+        val model = ScreenModel.of(state, dial)
+        val api = ParentalApi(console.http.client, TokenProvider { "T" }, os = "ANDROID", logger = { log += it })
+        val executor = Executor(api, "dev", { api.readExtension("dev", 0) }, console.configuredBedtime, pause = { pauses += it }, logger = { log += it })
+        return kotlinx.coroutines.runBlocking { executor.execute(model.actionPlan) { r -> model.replan(r.duration, r.bedtime) } }
+    }
 
     private fun run(console: FakeConsole, played: Int, target: Int, force: Boolean = false): Pair<ExecutionResult, io.github.lacostej.playtime.planner.Plan> {
         val state = DayState(console.now, limit = 0, extension = console.extension, played = played,
@@ -78,5 +93,32 @@ class ExecutorTest {
         assertEquals(1, failed.stepIndex) // the cancel worked, the first add didn't
         assertIs<ExtensionTimeout>(failed.error)
         assertEquals(io.github.lacostej.playtime.planner.Step.Cancel, p.steps[0])
+    }
+
+    @Test
+    fun anExtensionThatLandsWrongIsPlannedAgainOnceAndLogged() = runTest {
+        // 0 -> 25 is 15 + 5 + 5; the second 5 replaces the 20 with 5. The retry adds 15 + 5 from there.
+        val console = FakeConsole(now = at(11, 37), configuredBedtime = at(19), repeatReplaces = true)
+        val result = send(console, played = 0, dial = 25)
+        assertEquals(ExecutionResult.Done(25, at(19)), result)
+        assertContains(log, "retrying once: Nintendo shows 5 min extra, expected 25")
+    }
+
+    @Test
+    fun onlyAWrongExtensionIsRetried() {
+        val executor = Executor(ParentalApi(FakeConsole(0, 0).http.client, TokenProvider { "T" }, os = "ANDROID"), "dev", { error("unused") }, at(19))
+        assertEquals(true, executor.worthRetrying(ExecutionResult.Mismatch(5, at(19), 25, at(19))))
+        assertEquals(false, executor.worthRetrying(ExecutionResult.Mismatch(90, at(23, 59), 90, at(20)))) // stale bedtime base
+        assertEquals(false, executor.worthRetrying(ExecutionResult.Mismatch(5, at(23, 59), 25, at(20))))
+    }
+
+    @Test
+    fun aRefusalStatusStopsAtThatStepAndIsLogged() = runTest {
+        val console = FakeConsole(now = at(16, 10), configuredBedtime = at(19), refuseWith = "NO_EFFECT")
+        val result = send(console, played = 0, dial = 20)
+        val failed = assertIs<ExecutionResult.Failed>(result)
+        assertEquals("NO_EFFECT", assertIs<ApiError.Refused>(failed.error).status)
+        assertEquals(1, console.confirms) // no further steps after the refusal
+        assertContains(log, "  status NO_EFFECT")
     }
 }

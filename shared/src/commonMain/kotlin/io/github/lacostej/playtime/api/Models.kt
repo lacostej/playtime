@@ -90,4 +90,10 @@ data class BedtimeChange(val from: String? = null, val to: String? = null)
 internal data class ConfirmExtraPlayingTimeRequest(val deviceId: String, val additionalTime: Int, val withBedtime: Boolean)
 
 @Serializable
+data class ConfirmExtraPlayingTimeResponse(val status: String? = null, val updatedAt: Long? = null)
+
+/** Response statuses that mean the change wasn't made, despite HTTP 200 (pynintendoparental#144). */
+val REFUSED_STATUSES = setOf("NO_EFFECT", "OVERTIME_ERROR", "DURING_LATE_NIGHT_ERROR", "FAILED")
+
+@Serializable
 internal data class ErrorBody(val errorCode: String? = null)

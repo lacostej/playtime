@@ -33,6 +33,12 @@ data class ScreenModel(
     val bedtimeChanged: Boolean,
     val bedtimePassed: Boolean,
 ) {
+    /** The same request planned again from what Nintendo now shows, e.g. after a step landed wrong. */
+    fun replan(extension: Int?, extendedBedtime: Int?): Plan {
+        val s = state.copy(extension = extension, extendedBedtime = extendedBedtime)
+        return if (action == Action.STOP) plan(s, 0) else plan(s, maxOf(0, dial - s.played), force = true)
+    }
+
     companion object {
         const val MAX_DIAL = 240
 

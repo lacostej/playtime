@@ -266,7 +266,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             _buttonMessage.value = "Sending…"
             log.log("confirm: ${model.action} ${duration(model.allocated)} -> ${duration(model.dial)} from ${ready.state}")
             val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime, logger = log)
-            when (val result = executor.execute(plan)) {
+            when (val result = executor.execute(plan) { r -> model.replan(r.duration, r.bedtime) }) {
                 is ExecutionResult.Done -> { load(resetDial = true); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
                 is ExecutionResult.Mismatch -> {
                     load(resetDial = true); _buttonMessage.value = null
@@ -306,6 +306,12 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         is ApiError.Conflict -> "Another change is still being applied. Try again in a moment."
         is ApiError.Network -> "Can't reach Nintendo. Check your connection."
         is ApiError.Http -> "Nintendo returned an error (${e.status})."
+        is ApiError.Refused -> when (e.status) {
+            "NO_EFFECT" -> "Nintendo says play time can't be extended any more today."
+            "OVERTIME_ERROR" -> "Nintendo won't extend play time past bedtime."
+            "DURING_LATE_NIGHT_ERROR" -> "Nintendo doesn't allow extending play time late at night."
+            else -> "Nintendo couldn't apply the change."
+        } + " The screen shows the latest state."
     }
 
     private companion object {

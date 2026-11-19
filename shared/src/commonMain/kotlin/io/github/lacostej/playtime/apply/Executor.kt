@@ -27,6 +27,8 @@ data class ExtensionReading(
     val bedtime: Int?,
     /** fetchExtraPlayingTimeState.extendedPlayingTime: lags behind [duration] until the change is fully applied. */
     val applied: Int?,
+    /** fetchExtraPlayingTimeState.status, logged for troubleshooting. */
+    val status: String? = null,
 )
 
 class ExtensionTimeout(step: Step) : Exception("Nintendo didn't apply $step in time")
@@ -35,10 +37,12 @@ class ExtensionTimeout(step: Step) : Exception("Nintendo didn't apply $step in t
 suspend fun ParentalApi.readExtension(deviceId: String, nowEpochSeconds: Long): ExtensionReading {
     val extra = parentalControlSetting(deviceId).ownedDevice?.device?.extraPlayingTime
         ?.takeIf { it.expiresAt == null || it.expiresAt > nowEpochSeconds }
+    val state = extraPlayingTimeState(deviceId)
     return ExtensionReading(
         duration = extra?.inOneDay?.let { if (it.isInfinity) NONE_TODAY else it.duration },
         bedtime = extra?.bedtime?.endTime?.minutes,
-        applied = extraPlayingTimeState(deviceId).extendedPlayingTime,
+        applied = state.extendedPlayingTime,
+        status = state.status,
     )
 }
 
@@ -61,11 +65,27 @@ class Executor(
     private val settleTimeoutMs: Long = 30_000,
     private val logger: io.github.lacostej.playtime.api.ActivityLogger = io.github.lacostej.playtime.api.ActivityLogger.None,
 ) {
-    suspend fun execute(plan: Plan): ExecutionResult {
+    /**
+     * Runs [plan]. If only the extension landed wrong (seen 2026-11-19: a second "add 5" left 5 instead of 25),
+     * runs [replan] of what Nintendo now shows, once. A wrong bedtime is reported as is: retrying won't fix a stale base.
+     */
+    suspend fun execute(plan: Plan, replan: ((ExtensionReading) -> Plan)? = null): ExecutionResult {
+        val (result, last) = runLogged(plan)
+        if (replan == null || last == null || result !is ExecutionResult.Mismatch || !worthRetrying(result)) return result
+        val again = replan(last)
+        if (again.steps.isEmpty()) return result
+        logger.log("retrying once: Nintendo shows ${result.extension ?: 0} min extra, expected ${result.expectedExtension}")
+        return runLogged(again).first
+    }
+
+    /** Only the extension is off; a wrong bedtime comes from a stale base that a retry would build on. */
+    internal fun worthRetrying(m: ExecutionResult.Mismatch) = m.bedtime == m.expectedBedtime && (m.extension ?: 0) != m.expectedExtension
+
+    private suspend fun runLogged(plan: Plan): Pair<ExecutionResult, ExtensionReading?> {
         logger.log("plan: ${plan.steps.joinToString(", ") { describe(it) }}; expect ${plan.extensionAfter} min extra, bedtime ${plan.bedtimeAfter / 60}:${(plan.bedtimeAfter % 60).toString().padStart(2, '0')}")
-        val result = run(plan)
-        logger.log("result: $result")
-        return result
+        val outcome = run(plan)
+        logger.log("result: ${outcome.first}")
+        return outcome
     }
 
     private fun describe(step: Step) = when (step) {
@@ -73,8 +93,8 @@ class Executor(
         is Step.Add -> "add ${step.minutes}" + if (step.withBedtime) " +bedtime" else ""
     }
 
-    private suspend fun run(plan: Plan): ExecutionResult {
-        var last = try { read() } catch (e: ApiError) { return ExecutionResult.Failed(0, e) }
+    private suspend fun run(plan: Plan): Pair<ExecutionResult, ExtensionReading?> {
+        var last = try { read() } catch (e: ApiError) { return ExecutionResult.Failed(0, e) to null }
         logger.log("before: $last")
         for ((i, step) in plan.steps.withIndex()) {
             logger.log("step ${i + 1}/${plan.steps.size}: ${describe(step)}")
@@ -98,16 +118,17 @@ class Executor(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 logger.log("  failed: ${e::class.simpleName}: ${e.message}")
-                return ExecutionResult.Failed(i, e)
+                return ExecutionResult.Failed(i, e) to null
             }
         }
         val bedtime = last.bedtime ?: configuredBedtime
         val extension = last.duration ?: 0
-        return if (extension == plan.extensionAfter && bedtime == plan.bedtimeAfter) {
+        val result = if (extension == plan.extensionAfter && bedtime == plan.bedtimeAfter) {
             ExecutionResult.Done(extension, bedtime)
         } else {
             ExecutionResult.Mismatch(last.duration, bedtime, plan.extensionAfter, plan.bedtimeAfter)
         }
+        return result to last
     }
 
     /** Re-read until [done], every [pollIntervalMs], for at most [settleTimeoutMs]; returns the settled reading. */

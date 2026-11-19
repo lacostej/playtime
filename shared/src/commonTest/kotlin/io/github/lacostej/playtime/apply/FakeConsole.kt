@@ -30,6 +30,10 @@ class FakeConsole(
     private val lagReads: Int = 1,
     private var conflictsAfterCancel: Int = 0,
     private val ignoreAdds: Boolean = false,
+    /** An add of the same minutes as the previous one replaces the extension instead of adding (seen once on 2026-11-19). */
+    private val repeatReplaces: Boolean = false,
+    /** If set, every confirm answers 200 with this status and changes nothing. */
+    private val refuseWith: String? = null,
 ) {
     var extension: Int? = extension; private set
     var extendedBedtime: Int? = extendedBedtime; private set
@@ -48,9 +52,12 @@ class FakeConsole(
 
     private fun base() = extendedBedtime ?: staleBase ?: configuredBedtime
 
+    private var lastAdd: Int? = null
+
     private fun add(minutes: Int, moveBedtime: Boolean) {
         if (moveBedtime) extendedBedtime = minOf(base() + minutes, LAST_MINUTE)
-        extension = (extension ?: 0) + minutes
+        extension = if (repeatReplaces && minutes == lastAdd) minutes else (extension ?: 0) + minutes
+        lastAdd = minutes
         changed()
     }
 
@@ -75,7 +82,7 @@ class FakeConsole(
             updates++
             val body = Json.parseToJsonElement(r.bodyText()).jsonObject
             if (body["status"]!!.jsonPrimitive.content == "TO_CANCELED") {
-                extension = null; extendedBedtime = null; changed()
+                extension = null; extendedBedtime = null; lastAdd = null; changed()
                 pendingConflicts = conflictsAfterCancel; conflictsAfterCancel = 0
                 json("""{"deviceId":"dev","status":"TO_CANCELED","nextStepDetail":null}""")
             } else if (pendingConflicts > 0) {
@@ -95,8 +102,12 @@ class FakeConsole(
         r.url.encodedPath.endsWith("confirmExtraPlayingTime") -> {
             confirms++
             val body = Json.parseToJsonElement(r.bodyText()).jsonObject
-            if (!ignoreAdds) add(body["additionalTime"]!!.jsonPrimitive.int, body["withBedtime"]!!.jsonPrimitive.boolean)
-            json("""{"deviceId":"dev","status":"TO_ADDED"}""")
+            if (refuseWith != null) {
+                json("""{"deviceId":"dev","status":"$refuseWith"}""")
+            } else {
+                if (!ignoreAdds) add(body["additionalTime"]!!.jsonPrimitive.int, body["withBedtime"]!!.jsonPrimitive.boolean)
+                json("""{"deviceId":"dev","status":"TO_ADDED"}""")
+            }
         }
         else -> json("{}", 404)
     }
