@@ -240,7 +240,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    /** The button: changes that remove time ask first (Stop time, less time). */
+    /** The button: changes that remove time ask first (Stop play, less time). */
     fun onButton(model: ScreenModel) {
         when (model.action) {
             Action.NONE -> Unit

@@ -50,7 +50,7 @@ if ui | grep -q 'text="Exit demo"'; then tap_text "Exit demo"; sleep 3; fi
 tap_text Demo
 shot 1-not-started
 tap_prefix "Demo 1/4"; shot 2-playing
-tap_text "Stop time"; shot 5-dialog-stop; tap_text Cancel
+tap_text "Stop play"; shot 5-dialog-stop; tap_text Cancel
 turn 90; shot 2b-playing-add-15
 reset; turn -90; shot 2c-playing-reduce-15
 tap_prefix "Demo 2/4"; shot 3-bedtime-cuts

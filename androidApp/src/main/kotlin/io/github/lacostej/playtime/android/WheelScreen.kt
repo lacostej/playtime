@@ -385,6 +385,6 @@ private fun ActionButton(model: ScreenModel, message: String?, onClick: () -> Un
         colors = ButtonDefaults.buttonColors(containerColor = bg, contentColor = fg, disabledContainerColor = bg, disabledContentColor = fg),
         modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
     ) {
-        Text(message ?: if (model.action == Action.STOP) "Stop time" else "Confirm", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(message ?: if (model.action == Action.STOP) "Stop play" else "Confirm", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
 }

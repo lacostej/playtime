@@ -173,7 +173,7 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
             confirmButton = {
                 val stop = d.model.action == Action.STOP
                 TextButton(onClick = { vm.confirmed(d.model) }) {
-                    Text(if (stop) "Stop time" else "Reduce", color = if (stop) Palette.stop else Palette.reduce, fontWeight = FontWeight.SemiBold)
+                    Text(if (stop) "Stop play" else "Reduce", color = if (stop) Palette.stop else Palette.reduce, fontWeight = FontWeight.SemiBold)
                 }
             },
             dismissButton = { TextButton(onClick = vm::dismissDialog) { Text("Cancel") } },

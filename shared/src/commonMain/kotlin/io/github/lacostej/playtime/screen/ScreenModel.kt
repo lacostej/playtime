@@ -17,7 +17,7 @@ data class ScreenModel(
     /** The wheel value, never below [DayState.played]. */
     val dial: Int,
     val plan: Plan,
-    /** The plan the button sends: [plan], or the stop plan when the untouched button means "Stop time". */
+    /** The plan the button sends: [plan], or the stop plan when the untouched button means "Stop play". */
     val actionPlan: Plan,
     val action: Action,
     val delta: Int,

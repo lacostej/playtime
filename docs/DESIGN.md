@@ -43,7 +43,7 @@ Extending play time today means picking fixed amounts (5, 15, 30, 60 min) and re
 ## 5. Each fact once
 
 - The total appears on the wheel and in the card's before → after. The change (+10 min) appears only under the wheel number. Played / to play appear only in the summary line, which doubles as the colour key.
-- The button label doesn't repeat the value: "Confirm" or "Stop time".
+- The button label doesn't repeat the value: "Confirm" or "Stop play".
 
 ## 6. One colour code everywhere
 
@@ -68,7 +68,7 @@ Extending play time today means picking fixed amounts (5, 15, 30, 60 min) and re
 
 ## 8. Ask before taking time away
 
-- Stop time and reducing time ask for confirmation and say what will happen (a running game will be closed). The confirm button is red for Stop time and orange for Reduce.
+- Stop play and reducing time ask for confirmation and say what will happen (a running game will be closed). The confirm button is red for Stop play and orange for Reduce.
 - Adding time doesn't ask: it's reversible, and it's what parents do most.
 
 ## 9. Offer the fix where the problem shows
