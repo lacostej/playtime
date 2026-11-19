@@ -2,6 +2,10 @@
 
 An Android app (iOS later) that gives parents a simpler way to manage today's play time and bedtime: one wheel for today's total, and a preview of exactly what will change before you confirm. Works with Nintendo Switch Parental Controls.
 
+![The interface in demo mode: the wheel, the change preview, and the confirmation dialogs](docs/screenshots/overview.png)
+
+*Interface, work in progress.*
+
 > This is an independent, unofficial project. It is not affiliated with, endorsed by, or sponsored by Nintendo Co., Ltd. "Nintendo" and "Nintendo Switch" are trademarks of Nintendo. This app communicates only with Nintendo's servers using your own account; use it at your own risk.
 
 ## Layout
