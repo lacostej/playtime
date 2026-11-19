@@ -26,9 +26,11 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.lightColorScheme
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -41,6 +43,9 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.LifecycleEventEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.repeatOnLifecycle
+import kotlinx.coroutines.delay
 import org.example.playtime.screen.Action
 import org.example.playtime.screen.ScreenModel
 import org.example.playtime.screen.clock
@@ -100,7 +105,21 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
     val dial by vm.dial.collectAsState()
     val message by vm.buttonMessage.collectAsState()
     val dialog by vm.dialog.collectAsState()
+    val refreshing by vm.refreshing.collectAsState()
     LifecycleEventEffect(Lifecycle.Event.ON_START) { vm.onForeground() }
+
+    // While the app is visible: refresh every 2 min, and re-render "N min ago" every 30 s.
+    val lifecycle = LocalLifecycleOwner.current.lifecycle
+    var now by remember { mutableStateOf(kotlin.time.Clock.System.now()) }
+    LaunchedEffect(lifecycle) {
+        lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) {
+            while (true) {
+                delay(30_000)
+                now = kotlin.time.Clock.System.now()
+                vm.autoRefresh()
+            }
+        }
+    }
 
     when (val s = ui) {
         UiState.Disclaimer -> Disclaimer(vm::acknowledge)
@@ -114,9 +133,13 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
             Centered { Text("This first version needs a daily play-time limit on the console for today. Set one in the official app (it can be 0).") }
         } else {
             val model = ScreenModel.of(s.state, dial)
+            val (freshness, warn) = freshness(s, now)
+            PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
             WheelScreen(
                 title = s.title,
-                updatedAt = s.updatedAt?.let { "Play time as of ${java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(it.toEpochMilliseconds()))}" },
+                freshness = freshness,
+                freshnessWarning = warn,
+                refreshing = refreshing,
                 model = model,
                 buttonMessage = message,
                 warning = if (s.beforeWakeUp) "It's still before the console's wake-up time. Extra time added now may not behave as expected." else null,
@@ -128,6 +151,7 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
                 onReset = vm::resetDial,
                 onButton = { vm.onButton(model) },
             )
+            }
         }
     }
 
@@ -177,6 +201,31 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
             dismissButton = { TextButton(onClick = vm::signOut) { Text("Sign out") } },
         )
     }
+}
+
+private fun hhmm(t: kotlin.time.Instant): String =
+    java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(t.toEpochMilliseconds()))
+
+/** One line on how fresh the data is; the flag turns it orange. */
+private fun freshness(s: UiState.Ready, now: kotlin.time.Instant): Pair<String?, Boolean> {
+    if (s.demo) return null to false
+    val loaded = s.loadedAt ?: return null to false
+    val parts = mutableListOf<String>()
+    val failed = s.refreshFailedAt
+    val minutes = (now - loaded).inWholeMinutes
+    parts += when {
+        failed != null && failed > loaded -> "Couldn't refresh · data from ${hhmm(loaded)}"
+        minutes < 1 -> "Updated just now"
+        else -> "Updated $minutes min ago"
+    }
+    // Played time lags the console; say so when its report is old.
+    s.playedAsOf?.let { if ((now - it).inWholeMinutes >= 15) parts += "play time as of ${hhmm(it)}" }
+    // Changes reach the console only when it checks in.
+    s.consoleLastHeard?.let { heard ->
+        val sameAsPlayReport = s.playedAsOf != null && (heard - s.playedAsOf).inWholeMinutes < 5
+        if ((now - heard).inWholeMinutes >= 30 && !sameAsPlayReport) parts += "console last heard from ${hhmm(heard)}"
+    }
+    return parts.joinToString(" · ") to (failed != null && failed > loaded)
 }
 
 @Composable

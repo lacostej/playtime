@@ -20,6 +20,11 @@ data class Today(
     val beforeWakeUp: Boolean,
     val allowanceEnabled: Boolean,
     val bedtimeEnabled: Boolean,
+    /**
+     * Last time the console was heard from: the later of its last play report and its last settings sync.
+     * (device.lastOnlineCheckedAt is not usable: it showed a date years in the past on an active console.)
+     */
+    val consoleLastHeard: Instant?,
 )
 
 fun buildToday(
@@ -64,5 +69,9 @@ fun buildToday(
         beforeWakeUp = bedtimeEnabled && bedtime.startingTime != null && minuteOfDay < bedtime.startingTime.minutes,
         allowanceEnabled = allowanceEnabled,
         bedtimeEnabled = bedtimeEnabled,
+        consoleLastHeard = listOfNotNull(
+            summaries.lastUpdatedAt,
+            setting.ownedDevice?.device?.synchronizedParentalControlSetting?.synchronizedAt,
+        ).maxOrNull()?.let { Instant.fromEpochSeconds(it) },
     )
 }

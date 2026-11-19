@@ -8,6 +8,7 @@ import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -19,10 +20,13 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -81,7 +85,9 @@ private const val TURN = 60 // minutes per full turn, like a parking app
 @Composable
 fun WheelScreen(
     title: String,
-    updatedAt: String?,
+    freshness: String?,
+    freshnessWarning: Boolean,
+    refreshing: Boolean,
     model: ScreenModel,
     buttonMessage: String?,
     warning: String?,
@@ -93,9 +99,14 @@ fun WheelScreen(
     onReset: () -> Unit,
     onButton: () -> Unit,
 ) {
+    // Scrollable (but exactly one screen tall) so pulling down anywhere can trigger a refresh.
+    BoxWithConstraints(Modifier.fillMaxSize()) {
+    val screenHeight = maxHeight
     Column(
         Modifier
-            .fillMaxSize()
+            .fillMaxWidth()
+            .verticalScroll(rememberScrollState())
+            .height(screenHeight)
             .background(Palette.background)
             .pointerInput(model.plan.changed) { detectTapGestures { if (model.plan.changed) onReset() } } // tap away from the wheel resets it
             .padding(horizontal = 20.dp, vertical = 16.dp),
@@ -107,7 +118,13 @@ fun WheelScreen(
                     title, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, color = Palette.ink,
                     modifier = if (onTitle != null) Modifier.clickable(onClick = onTitle) else Modifier,
                 )
-                if (updatedAt != null) Text(updatedAt, fontSize = 12.sp, color = Palette.muted)
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    // Space always reserved, so the text doesn't move when the spinner appears.
+                    Box(Modifier.padding(end = 6.dp).size(12.dp)) {
+                        if (refreshing) CircularProgressIndicator(Modifier.fillMaxSize(), color = Palette.accent, strokeWidth = 1.5.dp)
+                    }
+                    if (freshness != null) Text(freshness, fontSize = 12.sp, color = if (freshnessWarning) Palette.reduce else Palette.muted)
+                }
             }
             Text(demoLink, fontSize = 13.sp, color = Palette.accent, fontWeight = FontWeight.SemiBold, modifier = Modifier.clickable(onClick = onDemoLink).padding(8.dp))
             Text("About", fontSize = 13.sp, color = Palette.muted, modifier = Modifier.clickable(onClick = onAbout).padding(8.dp))
@@ -121,6 +138,7 @@ fun WheelScreen(
         ChangeCard(model)
         Summary(model)
         ActionButton(model, buttonMessage, onButton)
+    }
     }
 }
 

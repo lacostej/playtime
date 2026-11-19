@@ -23,7 +23,7 @@ class TodayTest {
                  "tuesday":{"timeToPlayInOneDay":{"enabled":true,"limitTime":30},"bedtime":{"enabled":true,"endingTime":{"hour":16,"minute":0},"startingTime":{"hour":6,"minute":0}}},
                  "wednesday":{"timeToPlayInOneDay":$wednesdayAllowance,"bedtime":{"enabled":true,"endingTime":{"hour":19,"minute":0},"startingTime":{"hour":6,"minute":0}}}}},
                "etag":"e"},
-             "ownedDevice":{"device":{"timeZone":"Europe/Paris","extraPlayingTime":$extra}}}
+             "ownedDevice":{"device":{"timeZone":"Europe/Paris","extraPlayingTime":$extra,"lastOnlineCheckedAt":1893604500,"synchronizedParentalControlSetting":{"synchronizedEtag":"e","synchronizedAt":1893600000}}}}
             """,
         )
 
@@ -44,6 +44,7 @@ class TodayTest {
         assertEquals(25, t.state.played) // today's summary, not yesterday's
         assertNull(t.state.extension)
         assertEquals(Instant.fromEpochSeconds(1893604800), t.playedAsOf)
+        assertEquals(Instant.fromEpochSeconds(1893604800), t.consoleLastHeard) // play report (later than the 1893600000 sync)
     }
 
     @Test

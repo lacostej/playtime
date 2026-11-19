@@ -16,7 +16,14 @@ data class OwnedDevicesResponse(val ownedDevices: List<OwnedDevice> = emptyList(
 data class OwnedDevice(val deviceId: String, val label: String? = null, val device: Device? = null)
 
 @Serializable
-data class Device(val timeZone: String? = null, val extraPlayingTime: ExtraPlayingTime? = null)
+data class Device(
+    val timeZone: String? = null,
+    val extraPlayingTime: ExtraPlayingTime? = null,
+    val synchronizedParentalControlSetting: SettingSync? = null,
+)
+
+@Serializable
+data class SettingSync(val synchronizedAt: Long? = null)
 
 @Serializable
 data class ExtraPlayingTime(val inOneDay: InOneDay? = null, val bedtime: ExtraBedtime? = null, val expiresAt: Long? = null)

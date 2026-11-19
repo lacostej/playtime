@@ -54,6 +54,12 @@ class ParentalApiTest {
     }
 
     @Test
+    fun updateRequiredMeansTheServiceChanged() = runTest {
+        val fake = FakeNintendo { json("""{"status":400,"errorCode":"update_required","title":"Update required"}""", 400) }
+        assertFailsWith<ApiError.ServiceChanged> { api(fake).ownedDevices() }
+    }
+
+    @Test
     fun unexpectedResponseShapeMeansTheServiceChanged() = runTest {
         val fake = FakeNintendo { json("""{"parentalControlSetting":{"somethingElse":1}}""") }
         assertFailsWith<ApiError.ServiceChanged> { api(fake).parentalControlSetting("dev") }

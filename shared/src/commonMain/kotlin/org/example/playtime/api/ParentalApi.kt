@@ -84,6 +84,7 @@ class ParentalApi(
             else -> {
                 val code = runCatching { NintendoJson.decodeFromString(ErrorBody.serializer(), response.bodyAsText()).errorCode }.getOrNull()
                 if (status == 400 && code == "invalid_headers") throw ApiError.ServiceChanged("request headers rejected")
+                if (code == "update_required") throw ApiError.ServiceChanged("app update required") // as handled by Home Assistant's integration
                 throw ApiError.Http(status, code)
             }
         }

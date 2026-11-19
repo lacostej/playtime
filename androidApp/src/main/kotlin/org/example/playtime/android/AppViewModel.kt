@@ -38,9 +38,13 @@ sealed interface UiState {
         val state: DayState,
         val title: String,
         val demo: Boolean,
-        val updatedAt: Instant?,
+        val playedAsOf: Instant?,
         val beforeWakeUp: Boolean,
         val supported: Boolean,
+        val consoleLastHeard: Instant? = null,
+        val loadedAt: Instant? = null,
+        /** Set when an automatic refresh failed; the screen keeps the last data and says so. */
+        val refreshFailedAt: Instant? = null,
     ) : UiState
     data class Problem(val message: String) : UiState
 }
@@ -70,6 +74,11 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private var login: LoginRequest? = null
     private var deviceId: String? = null
     private var lastLoad = 0L
+    private var autoBlockedUntil = 0L
+    private var sending = false
+
+    private val _refreshing = MutableStateFlow(false)
+    val refreshing: StateFlow<Boolean> = _refreshing
     private var demoIndex = 0
 
     private val _ui = MutableStateFlow<UiState>(UiState.Loading)
@@ -145,7 +154,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     private fun showDemo() {
         val (label, state) = DemoScenarios.all[demoIndex]
         _dial.value = null
-        _ui.value = UiState.Ready(state, "Demo ${demoIndex + 1}/4 · $label", demo = true, updatedAt = null, beforeWakeUp = false, supported = true)
+        _ui.value = UiState.Ready(state, "Demo ${demoIndex + 1}/4 · $label", demo = true, playedAsOf = null, beforeWakeUp = false, supported = true)
     }
 
     fun signOut() {
@@ -161,30 +170,57 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun showAbout() { _dialog.value = Dialog.About }
     fun dismissDialog() { _dialog.value = null }
 
-    /** Refresh when the app comes to the foreground, at most once a minute (be gentle with the API). */
-    fun onForeground() {
+    /** Back in the foreground: refresh, at most once a minute (be gentle with the API). */
+    fun onForeground() = autoRefresh(minGapMs = 60_000)
+
+    /**
+     * Periodic refresh while the screen is open (every 2 min, like but slower than Home Assistant's 60 s;
+     * the console only reports play time every ~10 min anyway). Never while sending; after a failure, wait 15 min.
+     */
+    fun autoRefresh(minGapMs: Long = 110_000) {
         val ready = _ui.value as? UiState.Ready ?: return
-        if (!ready.demo && System.currentTimeMillis() - lastLoad > 60_000) refresh()
+        val now = System.currentTimeMillis()
+        if (ready.demo || sending || _refreshing.value || now < autoBlockedUntil || now - lastLoad < minGapMs) return
+        viewModelScope.launch { load(quiet = true) }
     }
 
+    /** Pull to refresh, or "Try again". */
     fun refresh() {
+        val ready = _ui.value as? UiState.Ready
+        if (ready?.demo == true) {
+            viewModelScope.launch { _refreshing.value = true; delay(400); _refreshing.value = false }
+            return
+        }
+        if (sending) return
         viewModelScope.launch { load() }
     }
 
-    private suspend fun load() {
+    /** [quiet]: an automatic refresh; failures show in the freshness line instead of a dialog. */
+    private suspend fun load(quiet: Boolean = false, resetDial: Boolean = false) {
+        _refreshing.value = true
         try {
             val device = api.ownedDevices().ownedDevices.firstOrNull()
                 ?: run { _ui.value = UiState.Problem("No console is linked to this Nintendo Account."); return }
             deviceId = device.deviceId
             val today = buildToday(api.parentalControlSetting(device.deviceId), api.dailySummaries(device.deviceId), device.device?.timeZone, Clock.System.now())
             lastLoad = System.currentTimeMillis()
-            _dial.value = null
+            autoBlockedUntil = 0
+            if (resetDial) _dial.value = null // an automatic refresh never throws away a change in progress
             _ui.value = UiState.Ready(
-                today.state, device.label ?: "Console", demo = false, updatedAt = today.playedAsOf,
+                today.state, device.label ?: "Console", demo = false, playedAsOf = today.playedAsOf,
                 beforeWakeUp = today.beforeWakeUp, supported = today.allowanceEnabled,
+                consoleLastHeard = today.consoleLastHeard, loadedAt = Clock.System.now(),
             )
         } catch (e: ApiError) {
-            handle(e)
+            val ready = _ui.value as? UiState.Ready
+            if (quiet && ready != null && e !is ApiError.LoginExpired) {
+                _ui.value = ready.copy(refreshFailedAt = Clock.System.now())
+                autoBlockedUntil = System.currentTimeMillis() + 15 * 60_000 // as Home Assistant: wait 15 min after an error
+            } else {
+                handle(e)
+            }
+        } finally {
+            _refreshing.value = false
         }
     }
 
@@ -216,12 +252,13 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         }
         val id = deviceId ?: return
         viewModelScope.launch {
+            sending = true
             _buttonMessage.value = "Sending…"
             val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime)
             when (val result = executor.execute(plan)) {
-                is ExecutionResult.Done -> { load(); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
+                is ExecutionResult.Done -> { load(resetDial = true); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
                 is ExecutionResult.Mismatch -> {
-                    load(); _buttonMessage.value = null
+                    load(resetDial = true); _buttonMessage.value = null
                     _dialog.value = Dialog.Mismatch(
                         "Nintendo applied something different from the plan: ${duration(result.extension ?: 0)} extra, bedtime ${clock(result.bedtime)} " +
                             "(planned ${duration(result.expectedExtension)}, bedtime ${clock(result.expectedBedtime)}). The screen now shows what Nintendo reports.",
@@ -231,9 +268,10 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
                     _buttonMessage.value = null
                     val e = result.error
                     if (e is ApiError) handle(e) else _dialog.value = Dialog.Error("Nintendo didn't confirm the change in time. The screen shows the latest state.")
-                    load()
+                    load(resetDial = true)
                 }
             }
+            sending = false
         }
     }
 

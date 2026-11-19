@@ -31,6 +31,7 @@ fun main() = runBlocking {
         for (d in devices) {
             val today = buildToday(api.parentalControlSetting(d.deviceId), api.dailySummaries(d.deviceId), d.device?.timeZone, Clock.System.now())
             println("label=${d.label} timeZone=${today.timeZone} beforeWakeUp=${today.beforeWakeUp} playedAsOf=${today.playedAsOf}")
+            println("  consoleLastHeard=${today.consoleLastHeard} now=${Clock.System.now()}")
             println("  ${today.state}")
             println("  untouched plan: ${plan(today.state, plan(today.state, -1).playableNow)}")
         }
