@@ -134,7 +134,7 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
             Centered { Text("This first version needs a daily play-time limit on the console for today. Set one in the official app (it can be 0).") }
         } else {
             val model = ScreenModel.of(s.state, dial)
-            val (freshness, warn) = freshness(s, now)
+            val (freshness, warn) = freshness(s, now, canPlay = ScreenModel.of(s.state).plan.playableNow > 0)
             PullToRefreshBox(isRefreshing = refreshing, onRefresh = vm::refresh, modifier = Modifier.fillMaxSize()) {
             WheelScreen(
                 title = s.title,
@@ -237,7 +237,7 @@ private fun hhmm(t: kotlin.time.Instant): String =
     java.text.DateFormat.getTimeInstance(java.text.DateFormat.SHORT).format(java.util.Date(t.toEpochMilliseconds()))
 
 /** One line on how fresh the data is; the flag turns it orange. */
-private fun freshness(s: UiState.Ready, now: kotlin.time.Instant): Pair<String?, Boolean> {
+private fun freshness(s: UiState.Ready, now: kotlin.time.Instant, canPlay: Boolean): Pair<String?, Boolean> {
     if (s.demo) return null to false
     val loaded = s.loadedAt ?: return null to false
     val parts = mutableListOf<String>()
@@ -248,13 +248,8 @@ private fun freshness(s: UiState.Ready, now: kotlin.time.Instant): Pair<String?,
         minutes < 1 -> "Updated just now"
         else -> "Updated $minutes min ago"
     }
-    // Played time lags the console; say so when its report is old.
-    s.playedAsOf?.let { if ((now - it).inWholeMinutes >= 15) parts += "play time as of ${hhmm(it)}" }
-    // Changes reach the console only when it checks in.
-    s.consoleLastHeard?.let { heard ->
-        val sameAsPlayReport = s.playedAsOf != null && (heard - s.playedAsOf).inWholeMinutes < 5
-        if ((now - heard).inWholeMinutes >= 30 && !sameAsPlayReport) parts += "console last heard from ${hhmm(heard)}"
-    }
+    // Played time lags the console. That only matters while they can play: then say how old its last report is.
+    s.consoleLastHeard?.let { if (canPlay && (now - it).inWholeMinutes >= 15) parts += "last report ${hhmm(it)}" }
     return parts.joinToString(" · ") to (failed != null && failed > loaded)
 }
 
