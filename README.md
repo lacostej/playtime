@@ -57,12 +57,9 @@ If Nintendo starts rejecting requests with `invalid_headers`, the minimum app ve
 
 ## Roadmap
 
-- Try "Move bedtime" on a real console (works in the demo; uses the same planner as other changes).
-- A release build, and later a store listing.
-- iOS: a SwiftUI screen on top of `shared/`, with the token in the Keychain.
-- Accessibility: a non-drag way to set the wheel.
-- A one-day override ("stricter day"): an earlier bedtime or lower limit for today only.
-- More than one console per account.
+- UX and UI design improvements.
+- Availability on the Play Store.
+- iOS, later.
 
 ## Credits
 
