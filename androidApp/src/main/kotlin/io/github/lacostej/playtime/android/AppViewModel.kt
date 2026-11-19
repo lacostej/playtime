@@ -244,9 +244,15 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
     fun onButton(model: ScreenModel) {
         when (model.action) {
             Action.NONE -> Unit
-            Action.ADD -> send(model)
+            Action.ADD, Action.RESET -> send(model) // a reset after bedtime takes no playable time
             Action.REDUCE, Action.STOP -> _dialog.value = Dialog.ConfirmChange(model)
         }
+    }
+
+    private fun doneText(model: ScreenModel) = when (model.action) {
+        Action.STOP -> "✓ Stopped"
+        Action.RESET -> "✓ Reset"
+        else -> "✓ Done"
     }
 
     fun confirmed(model: ScreenModel) {
@@ -259,7 +265,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
         val plan = model.actionPlan
         if (ready.demo) {
             _ui.value = ready.copy(state = simulate(ready.state, plan))
-            done(if (model.action == Action.STOP) "✓ Stopped (demo)" else "✓ Done (demo)")
+            done(doneText(model) + " (demo)")
             return
         }
         if (!BuildConfig.WRITES_ENABLED) {
@@ -273,7 +279,7 @@ class AppViewModel(app: Application) : AndroidViewModel(app) {
             log.log("confirm: ${model.action} ${duration(model.allocated)} -> ${duration(model.dial)}" + (if (model.fittingBedtime) " (move bedtime to ${clock(model.bedtimeAfter)})" else "") + " from ${ready.state}")
             val executor = Executor(api, id, { api.readExtension(id, Clock.System.now().epochSeconds) }, ready.state.configuredBedtime, logger = log)
             when (val result = executor.execute(plan) { r -> model.replan(r.duration, r.bedtime) }) {
-                is ExecutionResult.Done -> { load(resetDial = true); done(if (model.action == Action.STOP) "✓ Stopped · checked with Nintendo" else "✓ Done · checked with Nintendo") }
+                is ExecutionResult.Done -> { load(resetDial = true); done(doneText(model) + " · checked with Nintendo") }
                 is ExecutionResult.Mismatch -> {
                     load(resetDial = true); _buttonMessage.value = null
                     _dialog.value = Dialog.Mismatch(

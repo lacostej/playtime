@@ -17,6 +17,7 @@ Extending play time today means picking fixed amounts (5, 15, 30, 60 min) and re
 
 - The screen answers "how much can they play today, and until when?" with a single wheel. Chips, −/+ buttons and a mode toggle were all tried and removed.
 - The wheel shows **today's total** (played + still to play), in hours and minutes. Turning it changes the total. The part already played can't be taken back: the wheel stops there.
+- **Once bedtime has passed or been moved, the total is what was played plus what can still be played.** Nintendo's extra time then mostly mirrors the bedtime move (19:00 → 20:35 needs 1 h 35 min extra, whatever was played), so showing it would be wrong. Turning the wheel up means "N more minutes from now", which doesn't depend on the played time being up to date.
 - **One turn = one hour**, like a parking app. More time means turning round again.
 - **Touching never changes the value; only turning does** (relative drag from anywhere on the ring). Steps of 5 minutes, with a haptic tick.
 - **Tap away from the wheel to reset it** to the current setting. A visible Reset button was tried and rejected as too heavy.
@@ -70,6 +71,7 @@ Extending play time today means picking fixed amounts (5, 15, 30, 60 min) and re
 
 - Stop play and reducing time ask for confirmation and say what will happen (a running game will be closed). The confirm button is red for Stop play and orange for Reduce.
 - Adding time doesn't ask: it's reversible, and it's what parents do most.
+- After bedtime, with nothing left to play, the untouched button clears today's extra time: "Reset bedtime to 19:00" (or "Clear extra time" if bedtime wasn't moved). It doesn't ask, since it takes no playable time away.
 
 ## 9. Offer the fix where the problem shows
 
@@ -77,6 +79,7 @@ When bedtime cuts today's total (the faded part of the ring), a line under the w
 
 - Tapping it, the moon or the faded part sets up the change: the card shows Bedtime 19:00 → 19:30 and the button turns into a green Confirm. Tap away to undo.
 - It is only offered while the wheel is untouched. Turning the wheel already decides about bedtime.
+- It is not offered once bedtime has passed or been moved: the cut part is then Nintendo's bookkeeping, and turning the wheel gives time from now.
 - The time named in the link is the planned result, rounded to what the official amounts allow, so the preview holds no surprise.
 - Rejected: wiggling the handle to reveal "Adjust bedtime". It's invisible, and it changes what the red Stop button does after an accidental touch.
 

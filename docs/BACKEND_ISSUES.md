@@ -44,7 +44,7 @@ Once bedtime has passed, an extension moves bedtime from the configured bedtime 
 
 Bedtime 19:00, at 19:30, +1 h: bedtime becomes 20:00, so 30 of the 60 minutes can be played. Before bedtime the same choice exists in the opposite direction: the minutes can be granted with or without moving bedtime.
 
-**App:** the planner decides the bedtime option per step, so bedtime ends where play should stop, and the preview shows both "Play time" and "Bedtime" before anything is sent. When bedtime cuts today's total, the app offers "Move bedtime to HH:MM" (see `DESIGN.md`).
+**App:** the planner decides the bedtime option per step, so bedtime ends where play should stop, and the preview shows both "Play time" and "Bedtime" before anything is sent. When bedtime cuts today's total, the app offers "Move bedtime to HH:MM" (see `DESIGN.md`). Once bedtime has passed or been moved, the wheel shows played + playable rather than Nintendo's extra time, which then mirrors the bedtime move.
 
 ## 6. An add sometimes replaces the extension
 

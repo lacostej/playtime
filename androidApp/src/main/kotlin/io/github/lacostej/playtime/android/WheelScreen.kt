@@ -376,6 +376,7 @@ private fun ActionButton(model: ScreenModel, message: String?, onClick: () -> Un
         model.action == Action.STOP -> Palette.stop to Color.White
         model.action == Action.REDUCE -> Palette.reduce to Color.White
         model.action == Action.ADD -> Palette.accent to Color.White
+        model.action == Action.RESET -> Palette.bedtimeMove to Color.White
         else -> Palette.track to Palette.muted
     }
     Button(
@@ -385,6 +386,12 @@ private fun ActionButton(model: ScreenModel, message: String?, onClick: () -> Un
         colors = ButtonDefaults.buttonColors(containerColor = bg, contentColor = fg, disabledContainerColor = bg, disabledContentColor = fg),
         modifier = Modifier.fillMaxWidth().heightIn(min = 54.dp),
     ) {
-        Text(message ?: if (model.action == Action.STOP) "Stop play" else "Confirm", fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
+        Text(message ?: buttonText(model), fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
     }
+}
+
+private fun buttonText(model: ScreenModel) = when (model.action) {
+    Action.STOP -> "Stop play"
+    Action.RESET -> if (model.actionPlan.bedtimeAfter != model.bedtimeBefore) "Reset bedtime to ${clock(model.actionPlan.bedtimeAfter)}" else "Clear extra time"
+    else -> "Confirm"
 }

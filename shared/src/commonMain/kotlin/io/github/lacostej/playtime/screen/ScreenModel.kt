@@ -4,7 +4,7 @@ import io.github.lacostej.playtime.planner.DayState
 import io.github.lacostej.playtime.planner.Plan
 import io.github.lacostej.playtime.planner.plan
 
-enum class Action { NONE, ADD, REDUCE, STOP }
+enum class Action { NONE, ADD, REDUCE, STOP, RESET }
 
 /**
  * What the wheel screen shows for today's [state] and the wheel value [dial] (today's total, in minutes),
@@ -12,7 +12,10 @@ enum class Action { NONE, ADD, REDUCE, STOP }
  */
 data class ScreenModel(
     val state: DayState,
-    /** Today's total before any change: allowance + extension, never below what was played. */
+    /**
+     * The wheel's untouched value: allowance + extension, never below what was played; or, once bedtime
+     * has passed or been moved, played + what they can play, since the extension then mostly mirrors the move.
+     */
     val allocated: Int,
     /** The wheel value, never below [DayState.played]. */
     val dial: Int,
@@ -42,7 +45,11 @@ data class ScreenModel(
     /** The same request planned again from what Nintendo now shows, e.g. after a step landed wrong. */
     fun replan(extension: Int?, extendedBedtime: Int?): Plan {
         val s = state.copy(extension = extension, extendedBedtime = extendedBedtime)
-        return if (action == Action.STOP) plan(s, 0) else plan(s, maxOf(0, dial - s.played), force = true)
+        return when (action) {
+            Action.STOP -> plan(s, 0)
+            Action.RESET -> plan(s, 0, force = true)
+            else -> plan(s, maxOf(0, dial - s.played), force = true)
+        }
     }
 
     companion object {
@@ -52,20 +59,24 @@ data class ScreenModel(
 
         /** [fitBedtime]: the parent asked to move bedtime so the untouched total becomes playable. */
         fun of(s: DayState, dial: Int? = null, fitBedtime: Boolean = false): ScreenModel {
-            val allocated = allocated(s)
-            val v = (dial ?: allocated).coerceIn(s.played, maxOf(MAX_DIAL, allocated))
             val untouched = plan(s, -1)
-            val cuts = if (v == allocated) allocated - s.played - untouched.playableNow else 0
+            val bedtimePassedOrMoved = untouched.bedtimeBefore <= s.now || untouched.bedtimeBefore != s.configuredBedtime
+            val allocated = if (bedtimePassedOrMoved) s.played + untouched.playableNow else allocated(s)
+            val v = (dial ?: allocated).coerceIn(s.played, maxOf(MAX_DIAL, allocated))
+            val cuts = if (v == allocated && !bedtimePassedOrMoved) allocated - s.played - untouched.playableNow else 0
             val fit = if (cuts > 0) plan(s, allocated - s.played, force = true).takeIf { it.changed } else null
             val fitting = fitBedtime && fit != null
             val target = if (fitting) allocated - s.played else if (v == allocated) untouched.playableNow else maxOf(0, v - s.played)
             val p = if (fitting) fit!! else plan(s, target, force = v != allocated)
             val toPlay = maxOf(0, p.stopAt - s.now)
-            val allocatedAfter = if (p.changed) maxOf(s.limit + p.extensionAfter, s.played) else allocated
+            val allocatedAfter = if (!p.changed) allocated else if (bedtimePassedOrMoved) s.played + toPlay else maxOf(s.limit + p.extensionAfter, s.played)
             val playEnd = s.played + toPlay
             val stopPlan = if (!p.changed && p.playableNow > 0) plan(s, 0) else null
             val canStop = stopPlan != null && stopPlan.stopAt <= s.now
+            // Nothing left to play after bedtime, but an extension is still there: offer to clear it.
+            val resetPlan = if (!p.changed && untouched.bedtimeBefore <= s.now && (s.extension ?: 0) > 0) plan(s, 0, force = true) else null
             val action = when {
+                resetPlan != null -> Action.RESET
                 p.changed && target == 0 && p.playableNow > 0 -> Action.STOP
                 !p.changed && canStop -> Action.STOP
                 !p.changed -> Action.NONE
@@ -75,7 +86,7 @@ data class ScreenModel(
             val untilBedtime = p.bedtimeAfter - s.now
             return ScreenModel(
                 state = s, allocated = allocated, dial = v, plan = p,
-                actionPlan = stopPlan?.takeIf { !p.changed && canStop } ?: p,
+                actionPlan = resetPlan ?: stopPlan?.takeIf { !p.changed && canStop } ?: p,
                 action = action, delta = v - allocated, allocatedAfter = allocatedAfter, toPlay = toPlay,
                 blocked = if (v - playEnd >= 5) v - playEnd else 0,
                 // Only where bedtime limits play; when the plan moves bedtime, play ends at the handle (± rounding).

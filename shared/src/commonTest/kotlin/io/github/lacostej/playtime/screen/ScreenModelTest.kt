@@ -1,5 +1,7 @@
 package io.github.lacostej.playtime.screen
 
+import io.github.lacostej.playtime.planner.DayState
+import io.github.lacostej.playtime.planner.Step
 import kotlin.test.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertTrue
@@ -11,10 +13,10 @@ class ScreenModelTest {
     @Test
     fun untouchedScenarios() {
         val m = s.map { ScreenModel.of(it) }
-        assertEquals(listOf(0, 60, 60, 60), m.map { it.dial })
-        assertEquals(listOf(Action.NONE, Action.STOP, Action.STOP, Action.NONE), m.map { it.action })
+        assertEquals(listOf(0, 60, 60, 30), m.map { it.dial }) // after bedtime: what was played
+        assertEquals(listOf(Action.NONE, Action.STOP, Action.STOP, Action.RESET), m.map { it.action })
         assertEquals(listOf(0, 35, 20, 0), m.map { it.toPlay })
-        assertEquals(listOf(0, 0, 30, 30), m.map { it.blocked })
+        assertEquals(listOf(0, 0, 30, 0), m.map { it.blocked })
         assertEquals(30, m[2].bedtimeOnWheel) // 10 played + 20 until 19:00
         assertEquals(30, m[3].bedtimeOnWheel) // bedtime passed: where the played part ends
         assertEquals(170, m[0].bedtimeOnWheel) // on a later lap: the screen only draws it on the lap shown
@@ -46,10 +48,10 @@ class ScreenModelTest {
     }
 
     @Test
-    fun trimmingUnusedTimeAfterBedtimeIsAChange() {
-        val m = ScreenModel.of(s[3], 30)
-        assertEquals(Action.REDUCE, m.action)
-        assertEquals(30, m.allocatedAfter)
+    fun unusedTimeAfterBedtimeIsClearedByTheReset() {
+        val m = ScreenModel.of(s[3])
+        assertEquals(Action.RESET, m.action)
+        assertEquals(listOf(io.github.lacostej.playtime.planner.Step.Cancel), m.actionPlan.steps)
     }
 
     @Test
@@ -81,13 +83,50 @@ class ScreenModelTest {
     }
 
     @Test
-    fun bedtimeFitAfterBedtimeGivesTheUnusedTimeBack() {
-        // 19:20, bedtime 19:00 passed, 30 of 1 h unused.
-        assertEquals(30, ScreenModel.of(s[3]).bedtimeCuts)
-        val fit = ScreenModel.of(s[3], fitBedtime = true)
-        assertEquals(30, fit.toPlay)
-        assertTrue(fit.bedtimeAfter >= 19 * 60 + 50, "bedtime ${fit.bedtimeAfter}") // official amounts may overshoot; the allowance still stops play
-        assertEquals(Action.ADD, fit.action)
+    fun afterBedtimeTurningTheWheelGivesTimeFromNow() {
+        // 19:20, bedtime 19:00 passed, 30 of 1 h unused: no offer; +30 on the wheel gives 30 from now.
+        assertEquals(0, ScreenModel.of(s[3]).bedtimeCuts)
+        val more = ScreenModel.of(s[3], 60)
+        assertEquals(Action.ADD, more.action)
+        assertEquals(30, more.toPlay)
+        assertTrue(more.bedtimeAfter >= 19 * 60 + 50, "bedtime ${more.bedtimeAfter}")
+    }
+
+    // After bedtime Nintendo grants time only by moving bedtime from the weekday one, so the extension
+    // equals the move (95 min to play 20 from 20:15 with bedtime 19:00) and isn't time they can play.
+    private val movedAfterBedtime = DayState(now = 20 * 60 + 15, limit = 0, extension = 95, played = 0, configuredBedtime = 19 * 60, extendedBedtime = 20 * 60 + 35)
+    private val passedMovedBedtime = movedAfterBedtime.copy(now = 20 * 60 + 39, played = 10)
+
+    @Test
+    fun aMovedBedtimeShowsWhatTheyCanPlayNotNintendosExtension() {
+        val m = ScreenModel.of(movedAfterBedtime)
+        assertEquals(20, m.dial)
+        assertEquals(0, m.bedtimeCuts)
+        assertEquals(null, m.fitBedtime)
+        assertEquals(Action.STOP, m.action)
+    }
+
+    @Test
+    fun afterBedtimeTheWheelCountsFromNow() {
+        val m = ScreenModel.of(passedMovedBedtime)
+        assertEquals(10, m.dial) // what was played
+        assertEquals(null, m.fitBedtime)
+        val more = ScreenModel.of(passedMovedBedtime, 15)
+        assertEquals(Action.ADD, more.action); assertEquals(5, more.delta)
+        assertEquals(20 * 60 + 45, more.bedtimeAfter) // 5 min from 20:39, rounded up to the 5-minute grid
+    }
+
+    @Test
+    fun afterBedtimeAnExtensionCanBeReset() {
+        val m = ScreenModel.of(passedMovedBedtime)
+        assertEquals(Action.RESET, m.action)
+        assertEquals(listOf(Step.Cancel), m.actionPlan.steps)
+        assertEquals(19 * 60, m.actionPlan.bedtimeAfter)
+        assertEquals(m.actionPlan.steps, m.replan(passedMovedBedtime.extension, passedMovedBedtime.extendedBedtime).steps)
+        // Once cleared, nothing more to offer, whether Nintendo then reports no extension or 0 minutes.
+        for (cleared in listOf(null, 0)) {
+            assertEquals(Action.NONE, ScreenModel.of(passedMovedBedtime.copy(extension = cleared, extendedBedtime = null)).action)
+        }
     }
 
     @Test
