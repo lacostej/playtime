@@ -122,6 +122,7 @@ class ScreenModelTest {
         assertEquals(Action.RESET, m.action)
         assertEquals(listOf(Step.Cancel), m.actionPlan.steps)
         assertEquals(19 * 60, m.actionPlan.bedtimeAfter)
+        assertEquals(true, m.bedtimeChanged); assertEquals(19 * 60, m.bedtimeAfter) // the card shows 20:35 -> 19:00
         assertEquals(m.actionPlan.steps, m.replan(passedMovedBedtime.extension, passedMovedBedtime.extendedBedtime).steps)
         // Once cleared, nothing more to offer, whether Nintendo then reports no extension or 0 minutes.
         for (cleared in listOf(null, 0)) {

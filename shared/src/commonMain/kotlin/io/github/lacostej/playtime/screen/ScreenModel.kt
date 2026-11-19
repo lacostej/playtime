@@ -84,16 +84,18 @@ data class ScreenModel(
                 else -> Action.ADD
             }
             val untilBedtime = p.bedtimeAfter - s.now
+            val sent = resetPlan ?: stopPlan?.takeIf { !p.changed && canStop } ?: p
             return ScreenModel(
                 state = s, allocated = allocated, dial = v, plan = p,
-                actionPlan = resetPlan ?: stopPlan?.takeIf { !p.changed && canStop } ?: p,
+                actionPlan = sent,
                 action = action, delta = v - allocated, allocatedAfter = allocatedAfter, toPlay = toPlay,
                 blocked = if (v - playEnd >= 5) v - playEnd else 0,
                 // Only where bedtime limits play; when the plan moves bedtime, play ends at the handle (± rounding).
                 bedtimeOnWheel = if (p.bedtimeAfter == p.bedtimeBefore && (untilBedtime > 0 || s.played > 0)) s.played + maxOf(0, untilBedtime) else null,
-                bedtimeBefore = p.bedtimeBefore, bedtimeAfter = p.bedtimeAfter,
-                bedtimeChanged = p.bedtimeAfter != p.bedtimeBefore,
-                bedtimePassed = p.bedtimeAfter <= s.now,
+                // The card previews what the button sends, e.g. a reset's bedtime going back to the weekday one.
+                bedtimeBefore = p.bedtimeBefore, bedtimeAfter = sent.bedtimeAfter,
+                bedtimeChanged = sent.bedtimeAfter != p.bedtimeBefore,
+                bedtimePassed = sent.bedtimeAfter <= s.now,
                 bedtimeCuts = cuts, fitBedtime = fit, fittingBedtime = fitting,
             )
         }
