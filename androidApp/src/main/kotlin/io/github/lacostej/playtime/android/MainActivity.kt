@@ -17,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawingPadding
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
@@ -73,6 +74,7 @@ class MainActivity : ComponentActivity() {
     private val vm: AppViewModel by viewModels()
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        WheelSound.init(applicationContext)
         // Light background: dark status-bar and navigation-bar icons.
         enableEdgeToEdge(
             statusBarStyle = SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
@@ -204,6 +206,15 @@ fun App(vm: AppViewModel, openBrowser: (String) -> Unit) {
                     Text(DISCLAIMER + "\n\nOpen source, MIT licence. Builds on the pynintendoparental project.")
                     Text(if (BuildConfig.WRITES_ENABLED) "This build can change the console." else "Read-only build: nothing is sent to the console.", fontSize = 13.sp, color = Palette.muted)
                     TextButton(onClick = vm::showLog) { Text("Activity log") }
+                    Text("Wheel sound (experiment)", fontSize = 13.sp, color = Palette.muted)
+                    Row(Modifier.horizontalScroll(rememberScrollState())) {
+                        for (k in WheelSound.Kind.entries) {
+                            val on = k == WheelSound.kind
+                            TextButton(onClick = { WheelSound.choose(k) }) {
+                                Text(k.label, fontWeight = if (on) FontWeight.Bold else FontWeight.Normal, color = if (on) Palette.accent else Palette.muted)
+                            }
+                        }
+                    }
                 }
             },
             confirmButton = { TextButton(onClick = vm::dismissDialog) { Text("Close") } },

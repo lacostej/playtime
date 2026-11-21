@@ -185,7 +185,7 @@ private fun Wheel(model: ScreenModel, onDial: (Int) -> Unit, onFitBedtime: () ->
                         val next = (value0 + (d / (2 * PI) * TURN).toFloat()).coerceIn(played.toFloat(), ScreenModel.MAX_DIAL.toFloat())
                         dragValue = next
                         val snapped = maxOf(played, (next / 5).roundToInt() * 5)
-                        if (snapped != current.dial) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); dial(snapped) }
+                        if (snapped != current.dial) { haptics.performHapticFeedback(HapticFeedbackType.TextHandleMove); WheelSound.step(snapped); dial(snapped) }
                         change.consume()
                     },
                 )
